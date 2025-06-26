@@ -3,6 +3,7 @@ package cga.exercise.game
 import cga.exercise.components.camera.TronCamera
 import cga.exercise.components.geometry.*
 import cga.exercise.components.light.PointLight
+import cga.exercise.components.light.SpotLight
 import cga.exercise.components.shader.ShaderProgram
 import cga.exercise.components.texture.Texture2D
 import cga.framework.GLError
@@ -15,92 +16,31 @@ import org.joml.Matrix4f
 import org.joml.Vector2f
 import org.joml.Vector3f
 import org.lwjgl.glfw.GLFW.*
+import kotlin.math.sin
 
 /**
  * Created by Fabian on 16.09.2017.
  */
 class Scene(private val window: GameWindow) {
-    //private val staticShader: ShaderProgram = ShaderProgram("assets/shaders/simple_vert.glsl", "assets/shaders/simple_frag.glsl")
     private val staticShader = ShaderProgram("assets/shaders/tron_vert.glsl", "assets/shaders/tron_frag.glsl")
 
-    private val simpleMesh: Mesh
-
     private var groundRenderable: Renderable
-    //private var sphereRenderable: Renderable
 
     // Die Kamera als TronCamera
     private val camera = TronCamera()
     private var motorrad: Renderable? = null
 
     private val pointLight = PointLight(Vector3f(0f, 1f, 0f), Vector3f(1f, 1f, 1f))
+    private var spotLight: SpotLight? = null
+
+    private var lastMouseX = 0.0
+    private var firstMouseMove = true
 
 
 
 
     //scene setup
     init {
-        val vertices = floatArrayOf(
-            //A
-            -0.5f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f,
-            -0.25f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f,
-            -0.125f, 0.375f, 0.0f, 1.0f, 1.0f, 1.0f,
-            0.125f, 0.375f, 0.0f, 1.0f, 1.0f, 1.0f,
-            0.25f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f,
-            0.5f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f,
-            0.125f, 1.0f, 0.0f, 1.0f, 1.0f, 1.0f,
-            -0.125f, 1.0f, 0.0f, 1.0f, 1.0f, 1.0f,
-
-            // Triangle in A
-            -0.125f, 0.5f, 0.0f, 0.0f, 0.0f, 0.0f,
-            0.125f, 0.5f, 0.0f, 0.0f, 0.0f, 0.0f,
-            0.0f, 0.75f, 0.0f, 0.0f, 0.0f, 0.0f,
-
-            //S
-            0.5f, -0.25f, 0.0f, 1.0f, 1.0f, 1.0f,
-            -0.25f, -0.25f, 0.0f, 1.0f, 1.0f, 1.0f,
-            -0.25f, -0.375f, 0.0f, 1.0f, 1.0f, 1.0f,
-            0.5f, -0.375f, 0.0f, 1.0f, 1.0f, 1.0f,
-            0.5f, -1.0f, 0.0f, 1.0f, 1.0f, 1.0f,
-            -0.5f, -1.0f, 0.0f, 1.0f, 1.0f, 1.0f,
-            -0.5f, -0.75f, 0.0f, 1.0f, 1.0f, 1.0f,
-            0.25f, -0.75f, 0.0f, 1.0f, 1.0f, 1.0f,
-            0.25f, -0.625f, 0.0f, 1.0f, 1.0f, 1.0f,
-            -0.5f, -0.625f, 0.0f, 1.0f, 1.0f, 1.0f,
-        )
-        val indices = intArrayOf(
-            // A
-            0,1,2,
-            0,2,7,
-            0,7,6,
-            5,7,6,
-            3,4,5,
-            2,3,6,
-            2,3,7,
-            6,3,5,
-            7,3,6,
-            7,2,6,
-            // Triangle in A
-            9,10,8,
-            // S
-            0,11,5,
-            0,12,11,
-            0,20,12,
-            12,20,13,
-            13,20,14,
-            14,20,19,
-            14,19,15,
-            15,19,18,
-            15,18,16,
-            16,18,17
-
-        )
-
-        val attributes = arrayOf(
-            VertexAttribute(3, GL11.GL_FLOAT, 24, 0),
-            VertexAttribute(3, GL11.GL_FLOAT, 24, 12)
-        )
-
-        simpleMesh = Mesh(vertices, indices, attributes)
 
 
         val groundObj = loadOBJ("assets/models/ground.obj")     // Objekt aus dem Ordner laden
@@ -167,6 +107,18 @@ class Scene(private val window: GameWindow) {
         pointLight.parent = motorrad
         pointLight.translate(Vector3f(0f, 1.5f, 0f))
 
+        // Spotlight erstellen
+        spotLight = SpotLight(
+            position = Vector3f(0f, 1.5f, 0f),         // leicht erhöht über dem Motorrad
+            color = Vector3f(1f, 1f, 1f),              // weißes Licht
+            innerAngle = Math.toRadians(20.0).toFloat(),
+            outerAngle = Math.toRadians(25.0).toFloat()
+        )
+
+        // SpotLight an das Motorrad anhängen (mitbewegen!)
+        spotLight?.parent = motorrad
+
+
 
         //initial opengl state
         glClearColor(0.0f, 0.0f, 0.0f, 1.0f); GLError.checkThrow()
@@ -181,17 +133,34 @@ class Scene(private val window: GameWindow) {
     fun render(dt: Float, t: Float) {
         glClear(GL_COLOR_BUFFER_BIT or GL_DEPTH_BUFFER_BIT)
         staticShader.use()
-        //println("Using shader ${staticShader.programID}")
-        //simpleMesh.render()
-        staticShader.use()
 
         // Kamera-Matrizen an Shader binden
         camera.bind(staticShader)
 
+        // View-Matrix abrufen
+        val viewMatrix = camera.getCalculateViewMatrix()
+
+        staticShader.setUniform("pointLight_color", pointLight.color)
+        spotLight?.let { staticShader.setUniform("spotLight_color", it.color) }
+
+        spotLight?.bind(staticShader, camera.getCalculateViewMatrix())
+
+        staticShader.setUniform("emission_tint", Vector3f(0f, 1f, 0f)) // Boden auf grün
+        groundRenderable.render(staticShader)
+
+        // Farbwechsel abhängig von der Zeit t
+        val r = (sin(t * 2.0) * 0.5 + 0.5).toFloat()
+        val g = (sin(t * 0.7 + 2.0) * 0.5 + 0.5).toFloat()
+        val b = (sin(t * 1.3 + 4.0) * 0.5 + 0.5).toFloat()
+        val animatedTint = Vector3f(r, g, b)
+
+        // Motorrad-Emission setzen
+        staticShader.setUniform("emission_tint", animatedTint)
+
+        // Lichtfarbe anpassen (optional)
+        pointLight.color = animatedTint
         pointLight.bind(staticShader)
 
-       // sphereRenderable.render(staticShader)
-        groundRenderable.render(staticShader)
         motorrad?.render(staticShader) // oder über einen sceneGraph, je nach Struktur
 
     }
@@ -231,7 +200,30 @@ class Scene(private val window: GameWindow) {
 
     fun onKey(key: Int, scancode: Int, action: Int, mode: Int) {}
 
-    fun onMouseMove(xpos: Double, ypos: Double) {}
+    fun onMouseMove(xpos: Double, ypos: Double) {
+        if (firstMouseMove) {
+            lastMouseX = xpos
+            firstMouseMove = false
+            return
+        }
+
+        val dx = xpos - lastMouseX
+        lastMouseX = xpos
+
+        val sensitivity = 0.002f
+        val angleY = (-dx * sensitivity).toFloat()
+
+        // Schritt 1: Zurück an Ursprung (vom Parent weg)
+        camera.translate(Vector3f(0f, 0f, -4f))
+
+        // Schritt 2: Um Y-Achse rotieren
+        camera.rotate(0f, angleY, 0f)
+
+        // Schritt 3: Wieder zurück auf Orbit
+        camera.translate(Vector3f(0f, 0f, 4f))
+
+    }
+
 
     fun cleanup() {}
 }

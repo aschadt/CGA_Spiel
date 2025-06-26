@@ -5,9 +5,9 @@ import cga.exercise.components.shader.ShaderProgram
 import org.joml.Vector3f
 
 
-class PointLight(
-    var color: Vector3f,        // Lichtfarbe & -intensität (RGB)
-    initialPosition: Vector3f   // Anfangsposition im Weltkoordinatensystem
+open class PointLight(
+    initialPosition: Vector3f,   // Anfangsposition im Weltkoordinatensystem
+    open var color: Vector3f        // Lichtfarbe & -intensität (RGB)
 ) : Transformable(), IPointLight {
 
     init {

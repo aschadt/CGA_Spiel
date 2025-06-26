@@ -11,9 +11,21 @@ class Material(var diff: Texture2D,
                var tcMultiplier : Vector2f = Vector2f(1.0f)){
 
     fun bind(shaderProgram: ShaderProgram) {
-        emit.bind(1)                                                   //Textur wird auf Textur Unit 1 gebunden
-        shaderProgram.setUniform("material_emissive", 1)             //Daten in den Shader laden
-        shaderProgram.setUniform("material_tcMultiplier", tcMultiplier)    //Daten in den Shader laden
+        // Diffuse-Textur → Texture Unit 0
+        diff.bind(0)
+        shaderProgram.setUniform("material_diffuse", 0)
 
+        // Emissive-Textur → Texture Unit 1
+        emit.bind(1)
+        shaderProgram.setUniform("material_emissive", 1)
+
+        // Specular-Textur → Texture Unit 2
+        specular.bind(2)
+        shaderProgram.setUniform("material_specular", 2)
+
+        // Material-Parameter
+        shaderProgram.setUniform("material_shininess", shininess)
+        shaderProgram.setUniform("material_tcMultiplier", tcMultiplier)
     }
+
 }
