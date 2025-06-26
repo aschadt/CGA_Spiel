@@ -36,6 +36,15 @@ class Scene(private val window: GameWindow) {
     private var lastMouseX = 0.0
     private var firstMouseMove = true
 
+    private val pointLights = listOf(
+        pointLight,
+        PointLight(Vector3f(-20f, 1.5f, -20f), Vector3f(1f, 0f, 0f)),   // rot
+        PointLight(Vector3f(20f, 1.5f, -20f), Vector3f(0f, 1f, 0f)),    // grün
+        PointLight(Vector3f(20f, 1.5f, 20f), Vector3f(0f, 0f, 1f)),     // blau
+        PointLight(Vector3f(-20f, 1.5f, 20f), Vector3f(1f, 1f, 0f))     // gelb
+    )
+
+
 
 
 
@@ -137,11 +146,25 @@ class Scene(private val window: GameWindow) {
         // Kamera-Matrizen an Shader binden
         camera.bind(staticShader)
 
+        // Anzahl der Punktlichter setzen
+        staticShader.setUniform("numPointLights", pointLights.size)
+
+        // Für jedes Punktlicht: Position und Farbe setzen
+        for ((index, light) in pointLights.withIndex()) {
+            // Position in Viewspace berechnen
+            val viewPos = camera.getCalculateViewMatrix().transformPosition(light.getWorldPosition())
+
+            // Uniform-Namen dynamisch zusammenbauen
+            staticShader.setUniform("pointLight_positions[$index]", viewPos)
+            staticShader.setUniform("pointLight_colors[$index]", light.color)
+        }
+
         // View-Matrix abrufen
         val viewMatrix = camera.getCalculateViewMatrix()
 
         staticShader.setUniform("pointLight_color", pointLight.color)
         spotLight?.let { staticShader.setUniform("spotLight_color", it.color) }
+
 
         spotLight?.bind(staticShader, camera.getCalculateViewMatrix())
 
@@ -159,7 +182,6 @@ class Scene(private val window: GameWindow) {
 
         // Lichtfarbe anpassen (optional)
         pointLight.color = animatedTint
-        pointLight.bind(staticShader)
 
         motorrad?.render(staticShader) // oder über einen sceneGraph, je nach Struktur
 

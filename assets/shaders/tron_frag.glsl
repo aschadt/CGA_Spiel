@@ -10,6 +10,10 @@ uniform vec3 spotLight_color;
 
 uniform vec3 emission_tint;
 
+#define MAX_POINT_LIGHTS 10
+uniform int numPointLights;
+uniform vec3 pointLight_positions[MAX_POINT_LIGHTS];
+uniform vec3 pointLight_colors[MAX_POINT_LIGHTS];
 
 // Empfängt interpolierte Werte vom Vertex-Shader
 in struct VertexData
@@ -50,7 +54,9 @@ void main(){
     vec3 N = normalize(vertexData.normal_view);
     vec3 L = normalize(vertexData.toLight_view);
     vec3 V = normalize(vertexData.toCamera_view);
+
     vec3 R = reflect(-L, N);
+    vec3 H = normalize(L + V); // Halfway-Vektor
 
     // Entfernung zur Lichtquelle (Länge des Vektors toLight_view)
     float distance = length(vertexData.toLight_view);
@@ -71,15 +77,35 @@ void main(){
 
     // --- Phong-Berechnung ---
     float diff = max(dot(N, L), 0.0);
-    float spec = pow(max(dot(R, V), 0.0), material_shininess);
+    //float spec = pow(max(dot(R, V), 0.0), material_shininess);    // Phong
+    float spec = pow(max(dot(N, H), 0.0), material_shininess);      // Blinn-Phong
+
+    // 4 EckpointLights
+        vec3 pointDiffuse = vec3(0.0);
+        vec3 pointSpecular = vec3(0.0);
+
+        for (int i = 0; i < numPointLights; ++i) {
+            vec3 L_i = normalize(pointLight_positions[i] - vertexData.fragPos_view);
+            float d_i = length(pointLight_positions[i] - vertexData.fragPos_view);
+            float att_i = 1.0 / (1.0 + 5.0 * d_i + 0.032 * d_i * d_i);
+
+            vec3 H_i = normalize(L_i + V); // Blinn-Phong
+            float diff_i = max(dot(N, L_i), 0.0);
+            float spec_i = pow(max(dot(N, H_i), 0.0), material_shininess);
+
+            pointDiffuse += att_i * diff_i * diffuseColor * pointLight_colors[i];
+            pointSpecular += att_i * spec_i * specularColor * pointLight_colors[i];
+        }
 
     // PointLight-Anteil
-    vec3 diffuse_PL = attenuation * diff * diffuseColor * pointLight_color;
-    vec3 specular_PL = attenuation * spec * specularColor * pointLight_color;
+    vec3 diffuse_PL = pointDiffuse;
+    vec3 specular_PL = pointSpecular;
 
     // Spotlight-Anteil
     vec3 diffuse_SP = (attenuation * intensity * 5) * diff * diffuseColor * spotLight_color;
     vec3 specular_SP = (attenuation * intensity * 5) * spec * specularColor * spotLight_color;
+
+
 
     // Ambient
     vec3 ambient = 0.001 * diffuseColor;
@@ -87,15 +113,5 @@ void main(){
     // Final
     vec3 result = ambient + diffuse_PL + specular_PL + diffuse_SP + specular_SP + emissiveColor;
     fragColor = vec4(gamma(result), 1.0);
-
-
-    //fragColor = vec4(result, 1.0);
-
-
-     // Hole die Texturfarbe an der Stelle texCoords
-     //vec4 emissiveColor = texture(material_emissive, vertexData.texCoords);
-
-     // Verwende die Farbe der emissive-Textur als endgültige Fragmentfarbe
-     //fragColor = emissiveColor;
 
 }
