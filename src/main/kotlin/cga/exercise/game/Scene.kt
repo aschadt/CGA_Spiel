@@ -223,27 +223,20 @@ class Scene(private val window: GameWindow) {
     fun onKey(key: Int, scancode: Int, action: Int, mode: Int) {}
 
     fun onMouseMove(xpos: Double, ypos: Double) {
+        // Wird beim ersten MouseMove ausgelöst, um den Startwert zu speichern
         if (firstMouseMove) {
-            lastMouseX = xpos
+            lastMouseX = xpos           // Startposition merken
             firstMouseMove = false
             return
         }
 
         val dx = xpos - lastMouseX
-        lastMouseX = xpos
+        lastMouseX = xpos               // Neue Position merken
 
         val sensitivity = 0.002f
-        val angleY = (-dx * sensitivity).toFloat()
+        val yaw = (-dx * sensitivity).toFloat()  // Umrechnung in Winkel (negiert, damit Richtung stimmt)
 
-        // Schritt 1: Zurück an Ursprung (vom Parent weg)
-        camera.translate(Vector3f(0f, 0f, -4f))
-
-        // Schritt 2: Um Y-Achse rotieren
-        camera.rotate(0f, angleY, 0f)
-
-        // Schritt 3: Wieder zurück auf Orbit
-        camera.translate(Vector3f(0f, 0f, 4f))
-
+        camera.rotateAroundPoint(0f, yaw, 0f, Vector3f(0f))
     }
 
 
