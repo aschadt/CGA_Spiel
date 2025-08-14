@@ -17,6 +17,7 @@ import org.joml.Vector2f
 import org.joml.Vector3f
 import org.lwjgl.glfw.GLFW.*
 import kotlin.math.sin
+import kotlin.math.abs
 
 /**
  * Created by Fabian on 16.09.2017.
@@ -54,9 +55,30 @@ class Scene(private val window: GameWindow) {
         PointLight(Vector3f(-20f, 1.5f, 20f), Vector3f(1f, 1f, 0f))     // gelb
     )
 
+    // Kameras + Orbit-Rigs
+    private val cam1 = TronCamera()
+    private val cam2 = TronCamera()
+    private val rig1 = Transformable()
+    private val rig2 = Transformable()
 
+    // Orbit-Parameter (getrennt)
+    private var yaw1 = 0f
+    private var pitch1 = 0f          // Cam 1: kein Pitch (bleibt 0)
+    private var dist1 = 6.0f
 
+    private var yaw2 = 0f
+    private var pitch2 = -0.35f      // Cam 2: darf pitchen
+    private var dist2 = 6.0f
 
+    private val yawSpeed = 1.4f
+    private val pitchSpeed = 1.0f
+    private val zoomSpeed = 6.0f
+    private val pitchMin = -1.2f
+    private val pitchMax =  1.2f
+    private val distMin  = 2.0f
+    private val distMax  = 20.0f
+
+    private var activeCam = 0
 
     //scene setup
     init {
@@ -118,6 +140,19 @@ class Scene(private val window: GameWindow) {
         camera.parent = motorrad
         camera.rotate(Math.toRadians(-25.0).toFloat(), 0f, 0f) // Kamera um -35° um X-Achse neigen
         camera.translate(Vector3f(0.0f, 1.0f, 4.0f)) // Kamera um 4 Einheiten zurücksetzen
+
+        // Orbit-Rig 1 (Standard-Yaw um Y; Pitch bleibt 0)
+        rig1.parent = cubeRenderable
+        cam1.parent = rig1
+        cam1.translate(Vector3f(0f, 0f, dist1))
+        rig1.rotate(pitch1, 0f, 0f) // = 0
+
+        // Orbit-Rig 2 (andere Ebene: 90° um X vorrotiert, Pitch erlaubt)
+        rig2.parent = cubeRenderable
+        rig2.rotate(Math.toRadians(90.0).toFloat(), 0f, 0f)
+        cam2.parent = rig2
+        cam2.translate(Vector3f(0f, 0f, dist2))
+        rig2.rotate(pitch2, 0f, 0f)
 
         //PointLight an Motorrad parenten
         pointLight.parent = motorrad
@@ -218,12 +253,23 @@ class Scene(private val window: GameWindow) {
 
     }
 
+    private fun getActiveCamera(): TronCamera = if (activeCam == 0) cam1 else cam2
+    private fun getActiveRig(): Transformable = if (activeCam == 0) rig1 else rig2
+    private fun getPitchRef(): Float = if (activeCam == 0) pitch1 else pitch2
+    private fun setPitchRef(v: Float) { if (activeCam == 0) pitch1 = v else pitch2 = v }
+    private fun getDistRef(): Float = if (activeCam == 0) dist1 else dist2
+    private fun setDistRef(v: Float) { if (activeCam == 0) dist1 = v else dist2 = v }
+
     fun render(dt: Float, t: Float) {
         glClear(GL_COLOR_BUFFER_BIT or GL_DEPTH_BUFFER_BIT)
         staticShader.use()
 
         // Kamera-Matrizen an Shader binden
         camera.bind(staticShader)
+
+        val cam = getActiveCamera()
+        cam.bind(staticShader)
+        val view = cam.getCalculateViewMatrix()
 
         // Anzahl der Punktlichter setzen
         staticShader.setUniform("numPointLights", pointLights.size)
@@ -294,6 +340,43 @@ class Scene(private val window: GameWindow) {
             }
         }
 
+        // Aktives Rig & Cam
+        val rig = getActiveRig()
+        val cam = getActiveCamera()
+
+        // Orbit: Yaw (J/L)
+        val yawDir =
+            (if (window.getKeyState(GLFW_KEY_J)) +1f else 0f) +
+                    (if (window.getKeyState(GLFW_KEY_L)) -1f else 0f)
+        if (yawDir != 0f) rig.rotate(0f, yawDir * yawSpeed * dt, 0f)
+
+        // Orbit: Pitch (I/K) — nur für Cam 2 erlaubt
+        if (activeCam == 1) {
+            var dp = 0f
+            if (window.getKeyState(GLFW_KEY_I)) dp += +pitchSpeed * dt
+            if (window.getKeyState(GLFW_KEY_K)) dp += -pitchSpeed * dt
+            val newPitch = (getPitchRef() + dp).coerceIn(pitchMin, pitchMax)
+            val apply = newPitch - getPitchRef()
+            if (abs(apply) > 1e-6f) {
+                rig.rotate(apply, 0f, 0f)
+                setPitchRef(newPitch)
+            }
+        }
+
+        // Orbit: Zoom (U/O) — beide Cams
+        var zDelta = 0f
+        if (window.getKeyState(GLFW_KEY_U)) zDelta += -zoomSpeed * dt
+        if (window.getKeyState(GLFW_KEY_O)) zDelta += +zoomSpeed * dt
+        if (zDelta != 0f) {
+            val cur = getDistRef()
+            val next = (cur + zDelta).coerceIn(distMin, distMax)
+            val dz = next - cur
+            if (abs(dz) > 1e-6f) {
+                cam.translate(Vector3f(0f, 0f, dz))
+                setDistRef(next)
+            }
+        }
+
         // Controls
         if(chooseObj == 1) {
             objectControl(dt,cubeMoveMode,cubeRenderable)               // wendet die move und rotation logik auf Objekt 1 an
@@ -339,8 +422,6 @@ class Scene(private val window: GameWindow) {
         }
     }
 
-
-
     fun onKey(key: Int, scancode: Int, action: Int, mode: Int) {                            // Tastatur Interaktion
         if (key == GLFW_KEY_TAB && action == GLFW_PRESS) {                                  // beim drücken von TAB
             when (chooseObj) {                                                              // wird geschaut welchen Wert chooseObj hat
@@ -352,9 +433,12 @@ class Scene(private val window: GameWindow) {
                 }
             }
 
-
         }
 
+        if (key == GLFW_KEY_C && action == GLFW_PRESS) {
+            activeCam = 1 - activeCam
+            println("Aktive Kamera: ${if (activeCam == 0) "Cam 1 (ohne Pitch)" else "Cam 2 (Pitch erlaubt)"}")
+        }
         if( key == GLFW_KEY_1 && action == GLFW_PRESS) {                                    // beim drücken von 1 bekommt chooseObj den Wert 1
             chooseObj = 1
             println("Objekt $chooseObj ausgewählt")
