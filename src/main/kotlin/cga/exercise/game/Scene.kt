@@ -10,64 +10,53 @@ import cga.framework.GLError
 import cga.framework.GameWindow
 import cga.framework.ModelLoader
 import cga.framework.OBJLoader.loadOBJ
-import org.lwjgl.opengl.GL11
 import org.lwjgl.opengl.GL11.*
-import org.joml.Matrix4f
 import org.joml.Vector2f
 import org.joml.Vector3f
 import org.lwjgl.glfw.GLFW.*
-import kotlin.math.sin
 import kotlin.math.abs
+import kotlin.math.sin
 
-/**
- * Created by Fabian on 16.09.2017.
- */
 class Scene(private val window: GameWindow) {
+    // --- Shader ---
     private val staticShader = ShaderProgram("assets/shaders/tron_vert.glsl", "assets/shaders/tron_frag.glsl")
 
+    // --- Renderables ---
     private var groundRenderable: Renderable
-
+    private var roomRenderable: Renderable
     private var cubeRenderable: Renderable? = null
     private var coneRenderable: Renderable? = null
-
-    private var roomRenderable: Renderable
-
-    private var cubeMoveMode = true
-    private var coneMoveMode = true
-
-    private var chooseObj: Int = 0
-
-    // Die Kamera als TronCamera
-    private val camera = TronCamera()
     private var motorrad: Renderable? = null
 
+    // --- Auswahl / Objektsteuerung ---
+    private var cubeMoveMode = true
+    private var coneMoveMode = true
+    private var chooseObj: Int = 0
+
+    // --- Lichter ---
     private val pointLight = PointLight(Vector3f(0f, 1f, 0f), Vector3f(1f, 1f, 1f))
     private var spotLight: SpotLight? = null
-
-    private var lastMouseX = 0.0
-    private var firstMouseMove = true
-
     private val pointLights = listOf(
         pointLight,
-        PointLight(Vector3f(-20f, 1.5f, -20f), Vector3f(1f, 0f, 0f)),   // rot
-        PointLight(Vector3f(20f, 1.5f, -20f), Vector3f(0f, 1f, 0f)),    // grün
-        PointLight(Vector3f(20f, 1.5f, 20f), Vector3f(0f, 0f, 1f)),     // blau
-        PointLight(Vector3f(-20f, 1.5f, 20f), Vector3f(1f, 1f, 0f))     // gelb
+        PointLight(Vector3f(-20f, 1.5f, -20f), Vector3f(1f, 0f, 0f)),
+        PointLight(Vector3f( 20f, 1.5f, -20f), Vector3f(0f, 1f, 0f)),
+        PointLight(Vector3f( 20f, 1.5f,  20f), Vector3f(0f, 0f, 1f)),
+        PointLight(Vector3f(-20f, 1.5f,  20f), Vector3f(1f, 1f, 0f))
     )
 
-    // Kameras + Orbit-Rigs
+    // --- Orbit-Kameras + Rigs ---
     private val cam1 = TronCamera()
     private val cam2 = TronCamera()
     private val rig1 = Transformable()
     private val rig2 = Transformable()
 
-    // Orbit-Parameter (getrennt)
-    private var yaw1 = 0f
-    private var pitch1 = 0f          // Cam 1: kein Pitch (bleibt 0)
+    // Orbit-Parameter
+    private var yaw1 = 0f               // Cam1: Yaw erlaubt
+    private var pitch1 = 0f             // Cam1: Pitch gesperrt (bleibt 0)
     private var dist1 = 6.0f
 
-    private var yaw2 = 0f
-    private var pitch2 = -0.35f      // Cam 2: darf pitchen
+    private var yaw2 = 0f               // Cam2: Yaw gesperrt (bleibt 0)
+    private var pitch2 = -0.35f         // Cam2: Pitch erlaubt
     private var dist2 = 6.0f
 
     private val yawSpeed = 1.4f
@@ -78,176 +67,136 @@ class Scene(private val window: GameWindow) {
     private val distMin  = 2.0f
     private val distMax  = 20.0f
 
-    private var activeCam = 0
+    private var activeCam = 0 // 0 = cam1, 1 = cam2
 
-    //scene setup
+    // --- Kamera-Ziele & Hard-Snap Defaults ---
+    private val camTargets = mutableListOf<Transformable>()
+    private var camTargetIndex = 0
+    private var currentCamTarget: Transformable? = null
+
+    private val cam1DefaultYaw = 0f
+    private val cam1DefaultPitch = 0f
+    private val cam1YOffset = 1.0f
+
+    private val cam2DefaultYaw = 0f
+    private val cam2DefaultPitch = -0.35f
+    private val cam2YOffset = 0.0f
+
+    // --- Maus (optionales Yaw für Cam1) ---
+    private var firstMouseMove = true
+    private var lastMouseX = 0.0
+
     init {
-
-        //Ground Mesh
-
-        val groundObj = loadOBJ("assets/models/ground.obj")     // Objekt aus dem Ordner laden
-        val groundMeshList = groundObj.objects[0].meshes                // Meshes auf das Objekt setzen
-
+        // ---------- Ground ----------
+        val groundObj = loadOBJ("assets/models/ground.obj")
+        val groundMeshList = groundObj.objects[0].meshes
         val groundAttribs = arrayOf(
-            VertexAttribute(3, GL_FLOAT, 32, 0),   // Position
-            VertexAttribute(2, GL_FLOAT, 32, 12),  // Texture
-            VertexAttribute(3, GL_FLOAT, 32, 20)   // Normal
+            VertexAttribute(3, GL_FLOAT, 32, 0),
+            VertexAttribute(2, GL_FLOAT, 32, 12),
+            VertexAttribute(3, GL_FLOAT, 32, 20)
         )
 
-        // Texturen laden
         val diffuse = Texture2D("assets/textures/ground_diff.png", true)
         val specular = Texture2D("assets/textures/ground_spec.png", true)
         val emissive = Texture2D("assets/textures/ground_emit.png", true)
+        diffuse.setTexParams(GL_REPEAT, GL_REPEAT, GL_LINEAR_MIPMAP_LINEAR, GL_LINEAR)
+        specular.setTexParams(GL_REPEAT, GL_REPEAT, GL_LINEAR_MIPMAP_LINEAR, GL_LINEAR)
+        emissive.setTexParams(GL_REPEAT, GL_REPEAT, GL_LINEAR_MIPMAP_LINEAR, GL_LINEAR)
+        val groundMaterial = Material(diffuse, emissive, specular, shininess = 60f, tcMultiplier = Vector2f(64f, 64f))
 
-        // Texturparameter setzen
-        val wrap = GL_REPEAT
-        // sorgt für weichere Übergänge und schärfere Darstellung beim Verkleinern der Textur
-        val filter = GL_LINEAR_MIPMAP_LINEAR
-        // sorgt für glattere Darstellung ohne pixelige Kanten
-        val mipmap = GL_LINEAR
-
-        diffuse.setTexParams(wrap, wrap, filter, mipmap)
-        specular.setTexParams(wrap, wrap, filter, mipmap)
-        emissive.setTexParams(wrap, wrap, filter, mipmap)
-
-        // Material erzeugen
-        val groundMaterial = Material(
-            diff = diffuse,
-            emit = emissive,
-            specular = specular,
-            shininess = 60.0f,
-            tcMultiplier = Vector2f(64.0f, 64.0f)
-        )
-
-        // Mesh mit Material erzeugen
-        val groundMesh = Mesh(
-            groundMeshList[0].vertexData,
-            groundMeshList[0].indexData,
-            groundAttribs,
-            groundMaterial
-        )
-
-        // Ground Renderable mit Material verwenden
+        val groundMesh = Mesh(groundMeshList[0].vertexData, groundMeshList[0].indexData, groundAttribs, groundMaterial)
         groundRenderable = Renderable(mutableListOf(groundMesh))
 
-        //Motorrad Mesh
+        // ---------- Room ----------
+        val roomObj = loadOBJ("assets/models/room.obj")
+        val roomMeshList = roomObj.objects[0].meshes
+        val roomAttribs = arrayOf(
+            VertexAttribute(3, GL_FLOAT, 32, 0),
+            VertexAttribute(2, GL_FLOAT, 32, 12),
+            VertexAttribute(3, GL_FLOAT, 32, 20)
+        )
+        val roomMesh = Mesh(roomMeshList[0].vertexData, roomMeshList[0].indexData, roomAttribs, groundMaterial)
+        roomRenderable = Renderable(mutableListOf(roomMesh)).apply {
+            scale(Vector3f(23.0f, 5.0f, 23.0f))
+            rotate(0f, Math.toRadians(-90.0).toFloat(), 0f)
+            translate(Vector3f(0.0f, 0.0f, 0.0f))
+        }
 
-        // Motorrad-Modell laden und rotieren, danach skalieren
-        motorrad = ModelLoader.loadModel("assets/models/Light Cycle/HQ_Movie cycle.obj", Math.toRadians(-90.0).toFloat(), Math.toRadians(90.0).toFloat(),0f)
-        motorrad?.scale(Vector3f(0.8f))
+        // ---------- Cube ----------
+        val cubeObj = loadOBJ("assets/models/cube.obj")
+        val cubeMeshList = cubeObj.objects[0].meshes
+        val cubeAttribs = arrayOf(
+            VertexAttribute(3, GL_FLOAT, 32, 0),
+            VertexAttribute(2, GL_FLOAT, 32, 12),
+            VertexAttribute(3, GL_FLOAT, 32, 20)
+        )
+        val cubeMesh = Mesh(cubeMeshList[0].vertexData, cubeMeshList[0].indexData, cubeAttribs, groundMaterial)
+        cubeRenderable = Renderable(mutableListOf(cubeMesh)).apply {
+            translate(Vector3f(0.0f, 2.0f, -4.0f))
+        }
 
-        // Kamera an Motorrad parenten
-        camera.parent = motorrad
-        camera.rotate(Math.toRadians(-25.0).toFloat(), 0f, 0f) // Kamera um -35° um X-Achse neigen
-        camera.translate(Vector3f(0.0f, 1.0f, 4.0f)) // Kamera um 4 Einheiten zurücksetzen
+        // ---------- Cone ----------
+        val coneObj = loadOBJ("assets/models/cone.obj")
+        val coneMeshList = coneObj.objects[0].meshes
+        val coneAttribs = arrayOf(
+            VertexAttribute(3, GL_FLOAT, 32, 0),
+            VertexAttribute(2, GL_FLOAT, 32, 12),
+            VertexAttribute(3, GL_FLOAT, 32, 20)
+        )
+        val coneMesh = Mesh(coneMeshList[0].vertexData, coneMeshList[0].indexData, coneAttribs, groundMaterial)
+        coneRenderable = Renderable(mutableListOf(coneMesh)).apply {
+            translate(Vector3f(0.0f, 2.0f, -2.0f))
+            scale(Vector3f(0.5f, 0.5f, 0.5f))
+        }
 
-        //PointLight an Motorrad parenten
-        pointLight.parent = motorrad
+        // ---------- Motorrad (optional) ----------
+        motorrad = ModelLoader.loadModel(
+            "assets/models/Light Cycle/HQ_Movie cycle.obj",
+            Math.toRadians(-90.0).toFloat(),
+            Math.toRadians(90.0).toFloat(),
+            0f
+        )?.apply {
+            scale(Vector3f(0.8f))
+        }
+
+        // ---------- Lichter ----------
+        pointLight.parent = motorrad   // initial – wird im setCameraTarget ggf. neu geparentet
         pointLight.translate(Vector3f(0f, 1.5f, 0f))
-
-        // Spotlight erstellen
         spotLight = SpotLight(
-            position = Vector3f(0f, 1.5f, 0f),         // leicht erhöht über dem Motorrad
-            color = Vector3f(1f, 1f, 1f),              // weißes Licht
+            position = Vector3f(0f, 1.5f, 0f),
+            color = Vector3f(1f, 1f, 1f),
             innerAngle = Math.toRadians(20.0).toFloat(),
             outerAngle = Math.toRadians(25.0).toFloat()
-        )
+        ).also { it.parent = motorrad }
 
-        // SpotLight an das Motorrad anhängen (mitbewegen!)
-        spotLight?.parent = motorrad
-
-        //Room Mesh
-
-        val roomObj = loadOBJ("assets/models/room.obj")         // Objekt aus dem Ordner laden
-        val roomMeshList = roomObj.objects[0].meshes                   // Meshes auf das Objekt setzen
-
-        val roomAttribs = arrayOf(
-            VertexAttribute(3, GL_FLOAT, 32, 0),   // Position
-            VertexAttribute(2, GL_FLOAT, 32, 12),  // Texture
-            VertexAttribute(3, GL_FLOAT, 32, 20)   // Normal
-        )
-
-        // Mesh mit Material erzeugen
-        val roomMesh = Mesh(
-            roomMeshList[0].vertexData,
-            roomMeshList[0].indexData,
-            roomAttribs,
-            groundMaterial
-        )
-        // Room Renderable mit Material verwenden
-        roomRenderable = Renderable(mutableListOf(roomMesh))
-
-        roomRenderable.scale(Vector3f(23.0f, 5.0f, 23.0f))                  // Objekt skalieren, rotieren und verschieben
-        roomRenderable.rotate(0f, Math.toRadians(-90.0).toFloat(), 0f)
-        roomRenderable.translate(Vector3f(0.0f, 0.0f, 0.0f))
-
-
-        //Cube Mesh
-
-        val cubeObj = loadOBJ("assets/models/cube.obj")             // Objekt aus dem Ordner laden
-        val cubeMeshList = cubeObj.objects[0].meshes                       // Meshes auf das Objekt setzen
-
-        val cubeAttribs = arrayOf(
-            VertexAttribute(3, GL_FLOAT, 32, 0),   // Position
-            VertexAttribute(2, GL_FLOAT, 32, 12),  // Texture
-            VertexAttribute(3, GL_FLOAT, 32, 20)   // Normal
-        )
-        // Mesh mit Material erzeugen
-        val cubeMesh = Mesh(
-            cubeMeshList[0].vertexData,
-            cubeMeshList[0].indexData,
-            cubeAttribs,
-            groundMaterial
-        )
-        // Cube Renderable mit Material verwenden
-        cubeRenderable = Renderable(mutableListOf(cubeMesh))
-        // Cube verschieben
-        cubeRenderable?.translate(Vector3f(0.0f, 2.0f, -4.0f))
-
-        //Cone Mesh
-
-        val coneObj = loadOBJ("assets/models/cone.obj")             // Objekt aus dem Ordner laden
-        val coneMeshList = coneObj.objects[0].meshes                        // Meshes auf das Objekt setzen
-
-        val coneAttribs = arrayOf(
-            VertexAttribute(3, GL_FLOAT, 32, 0),   // Position
-            VertexAttribute(2, GL_FLOAT, 32, 12),  // Texture
-            VertexAttribute(3, GL_FLOAT, 32, 20)   // Normal
-        )
-        // Mesh mit Material erzeugen
-        val coneMesh = Mesh(
-            coneMeshList[0].vertexData,
-            coneMeshList[0].indexData,
-            coneAttribs,
-            groundMaterial
-        )
-        // Cone Renderable mit Material verwenden
-        coneRenderable = Renderable(mutableListOf(coneMesh))
-        // Cone verschieben und skalieren
-        coneRenderable?.translate(Vector3f(0.0f, 2.0f, -2.0f))
-        coneRenderable?.scale(Vector3f(0.5f, 0.5f, 0.5f))
-
-        // Orbit-Rig 1 (Standard-Yaw um Y; Pitch bleibt 0)
-        rig1.parent = cubeRenderable
+        // ---------- Orbit-Setup nach dem Erzeugen der Objekte ----------
+        // Cams an Rigs hängen + Start-Offsets
         cam1.parent = rig1
-        cam1.translate(Vector3f(0f, 1.0f, dist1))
-        rig1.rotate(pitch1, 0f, 0f) // = 0
-
-        // Orbit-Rig 2 (andere Ebene: 90° um X vorrotiert, Pitch erlaubt)
-        rig2.parent = cubeRenderable
-        rig2.rotate(Math.toRadians(0.0).toFloat(), 0f, 0f)
         cam2.parent = rig2
-        cam2.translate(Vector3f(0f, 0f, dist2))
-        rig2.rotate(pitch2, 0f, 0f)
+        cam1.translate(Vector3f(0f, cam1YOffset, dist1))
+        cam2.translate(Vector3f(0f, cam2YOffset, dist2))
+        // Rig2: andere Ebene (90° um X vorrotiert)
+        rig2.rotate(Math.toRadians(270.0).toFloat(), 0f, 0f)
+        // Start-Pitchs
+        if (abs(pitch1) > 1e-6f) rig1.rotate(pitch1, 0f, 0f)
+        if (abs(pitch2) > 1e-6f) rig2.rotate(pitch2, 0f, 0f)
 
-        //initial opengl state
-        glClearColor(0.0f, 0.0f, 0.0f, 1.0f); GLError.checkThrow()
+        // ---------- Kamera-Ziele festlegen & erstes Ziel (Hard-Snap) ----------
+        camTargets.clear()
+        cubeRenderable?.let { camTargets += it }
+        coneRenderable?.let { camTargets += it }
+        motorrad?.let     { camTargets += it }
+        if (camTargets.isNotEmpty()) setCameraTarget(camTargets[0], snap = true)
+
+        // ---------- OpenGL State ----------
+        glClearColor(0f, 0f, 0f, 1f); GLError.checkThrow()
         glEnable(GL_DEPTH_TEST)
         glEnable(GL_CULL_FACE)
         glCullFace(GL_BACK)
         glFrontFace(GL_CCW)
     }
 
+    // --- Aktive Kamera/Rig/Parameter ---
     private fun getActiveCamera(): TronCamera = if (activeCam == 0) cam1 else cam2
     private fun getActiveRig(): Transformable = if (activeCam == 0) rig1 else rig2
     private fun getPitchRef(): Float = if (activeCam == 0) pitch1 else pitch2
@@ -255,67 +204,111 @@ class Scene(private val window: GameWindow) {
     private fun getDistRef(): Float = if (activeCam == 0) dist1 else dist2
     private fun setDistRef(v: Float) { if (activeCam == 0) dist1 = v else dist2 = v }
 
+    // --- Hard-Snap auf Standardpose beim Zielwechsel ---
+    private fun setCameraTarget(target: Transformable, snap: Boolean = true) {
+        currentCamTarget = target
+        // Rigs an neues Ziel hängen
+        rig1.parent = target
+        rig2.parent = target
+        // (Optional) Lichter mitslaven
+        spotLight?.parent = target
+        pointLight.parent = target
+
+        if (!snap) return
+        val eps = 1e-6f
+
+        // ---- Cam 1: Yaw erlaubt, Pitch gesperrt ----
+        if (abs(yaw1)   > eps) rig1.rotate(0f, -yaw1, 0f)
+        if (abs(pitch1) > eps) rig1.rotate(-pitch1, 0f, 0f)
+        yaw1   = cam1DefaultYaw
+        pitch1 = cam1DefaultPitch
+        if (abs(pitch1) > eps) rig1.rotate(pitch1, 0f, 0f)
+        if (abs(yaw1)   > eps) rig1.rotate(0f, yaw1, 0f)
+        val p1 = cam1.getPosition()
+        val dY1 = cam1YOffset - p1.y
+        val dZ1 = dist1       - p1.z
+        if (abs(dY1) > eps || abs(dZ1) > eps) cam1.translate(Vector3f(0f, dY1, dZ1))
+
+        // ---- Cam 2: Pitch erlaubt, Yaw gesperrt ----
+        if (abs(yaw2)   > eps) rig2.rotate(0f, -yaw2, 0f)
+        if (abs(pitch2) > eps) rig2.rotate(-pitch2, 0f, 0f)
+        yaw2   = cam2DefaultYaw
+        pitch2 = cam2DefaultPitch
+        if (abs(pitch2) > eps) rig2.rotate(pitch2, 0f, 0f)
+        if (abs(yaw2)   > eps) rig2.rotate(0f, yaw2, 0f)
+        val p2 = cam2.getPosition()
+        val dY2 = cam2YOffset - p2.y
+        val dZ2 = dist2       - p2.z
+        if (abs(dY2) > eps || abs(dZ2) > eps) cam2.translate(Vector3f(0f, dY2, dZ2))
+    }
+
+    private fun cycleCameraTarget(forward: Boolean = true) {
+        if (camTargets.isEmpty()) return
+        camTargetIndex = if (forward)
+            (camTargetIndex + 1) % camTargets.size
+        else
+            (camTargetIndex - 1 + camTargets.size) % camTargets.size
+        setCameraTarget(camTargets[camTargetIndex], snap = true)
+        println("Kamera-Ziel: $camTargetIndex / ${camTargets.size}")
+    }
+
+    // --- Render ---
     fun render(dt: Float, t: Float) {
         glClear(GL_COLOR_BUFFER_BIT or GL_DEPTH_BUFFER_BIT)
         staticShader.use()
 
-        // Kamera-Matrizen an Shader binden
-        camera.bind(staticShader)
-
+        // Nur aktive Orbit-Kamera binden
         val cam = getActiveCamera()
         cam.bind(staticShader)
         val view = cam.getCalculateViewMatrix()
 
-        // Anzahl der Punktlichter setzen
+        // Punktlichter (Viewspace)
         staticShader.setUniform("numPointLights", pointLights.size)
-
-        // Für jedes Punktlicht: Position und Farbe setzen
         for ((index, light) in pointLights.withIndex()) {
-            // Position in Viewspace berechnen
-            val viewPos = camera.getCalculateViewMatrix().transformPosition(light.getWorldPosition())
-
-            // Uniform-Namen dynamisch zusammenbauen
+            val viewPos = view.transformPosition(light.getWorldPosition(), Vector3f())
             staticShader.setUniform("pointLight_positions[$index]", viewPos)
             staticShader.setUniform("pointLight_colors[$index]", light.color)
         }
 
-        // View-Matrix abrufen
-        val viewMatrix = camera.getCalculateViewMatrix()
+        // Einzelnes PointLight (für vertex shader 'light_position')
+        pointLight.bind(staticShader)
 
-        staticShader.setUniform("pointLight_color", pointLight.color)
-        spotLight?.let { staticShader.setUniform("spotLight_color", it.color) }
+        // Spotlight
+        spotLight?.let { sp ->
+            staticShader.setUniform("spotLight_color", sp.color)
+            sp.bind(staticShader, view) // setzt u.a. direction (Basis) + cutoffs
 
+            // explizit zum aktuellen Target ausrichten (falls vorhanden)
+            val target = currentCamTarget ?: cubeRenderable
+            target?.let {
+                val dirWorld = Vector3f(it.getWorldPosition()).sub(sp.getWorldPosition()).normalize()
+                val dirView  = view.transformDirection(dirWorld, Vector3f()).normalize()
+                staticShader.setUniform("spot_direction_view", dirView)
+            }
+        }
 
-        spotLight?.bind(staticShader, camera.getCalculateViewMatrix())
+        // Boden
+        staticShader.setUniform("emission_tint", Vector3f(0f, 1f, 0f))
+        groundRenderable.render(staticShader)
 
-        staticShader.setUniform("emission_tint", Vector3f(0f, 1f, 0f)) // Boden auf grün
-        //groundRenderable.render(staticShader)
+        // Animierte Emission
+        val r = (sin(t * 2.0) * 0.5 + 0.5).toFloat()
+        val g = (sin(t * 0.7 + 2.0) * 0.5 + 0.5).toFloat()
+        val b = (sin(t * 1.3 + 4.0) * 0.5 + 0.5).toFloat()
+        staticShader.setUniform("emission_tint", Vector3f(r, g, b))
 
         cubeRenderable?.render(staticShader)
         coneRenderable?.render(staticShader)
         roomRenderable.render(staticShader)
-
-        // Farbwechsel abhängig von der Zeit t
-        val r = (sin(t * 2.0) * 0.5 + 0.5).toFloat()
-        val g = (sin(t * 0.7 + 2.0) * 0.5 + 0.5).toFloat()
-        val b = (sin(t * 1.3 + 4.0) * 0.5 + 0.5).toFloat()
-        val animatedTint = Vector3f(r, g, b)
-
-        // Motorrad-Emission setzen
-        staticShader.setUniform("emission_tint", animatedTint)
-
-        // Lichtfarbe anpassen (optional)
-        pointLight.color = animatedTint
-
-        motorrad?.render(staticShader) // oder über einen sceneGraph, je nach Struktur
-
+        motorrad?.render(staticShader)
     }
 
+    // --- Update ---
     fun update(dt: Float, t: Float) {
         val moveSpeed = 8.0f
         val rotateSpeed = Math.toRadians(90.0).toFloat()
 
-        // --- Motorrad-Controls (deins, unverändert) ---
+        // Motorrad bewegen/rotieren (dein Code)
         if (window.getKeyState(GLFW_KEY_W)) {
             motorrad?.translate(Vector3f(0f, 0f, -moveSpeed * dt))
             if (window.getKeyState(GLFW_KEY_A)) motorrad?.rotate(0f,  rotateSpeed * dt, 0f)
@@ -327,19 +320,22 @@ class Scene(private val window: GameWindow) {
             if (window.getKeyState(GLFW_KEY_D)) motorrad?.rotate(0f,  rotateSpeed * dt, 0f)
         }
 
-        // --- Aktives Rig & Cam ---
         val rig = getActiveRig()
         val cam = getActiveCamera()
 
-        // --- Yaw (J/L): NUR Cam 1 ---
+        // Yaw (J/L): nur Cam1
         if (activeCam == 0) {
             val yawDir =
                 (if (window.getKeyState(GLFW_KEY_J)) +1f else 0f) +
                         (if (window.getKeyState(GLFW_KEY_L)) -1f else 0f)
-            if (yawDir != 0f) rig.rotate(0f, yawDir * yawSpeed * dt, 0f)
+            if (yawDir != 0f) {
+                val dy = yawDir * yawSpeed * dt
+                rig.rotate(0f, dy, 0f)
+                yaw1 += dy
+            }
         }
 
-        // --- Pitch (I/K): NUR Cam 2 ---
+        // Pitch (I/K): nur Cam2
         if (activeCam == 1) {
             var dp = 0f
             if (window.getKeyState(GLFW_KEY_I)) dp += +pitchSpeed * dt
@@ -352,7 +348,7 @@ class Scene(private val window: GameWindow) {
             }
         }
 
-        // --- Zoom (U/O): beide Cams ---
+        // Zoom (U/O): beide Cams
         var zDelta = 0f
         if (window.getKeyState(GLFW_KEY_U)) zDelta += -zoomSpeed * dt
         if (window.getKeyState(GLFW_KEY_O)) zDelta += +zoomSpeed * dt
@@ -366,88 +362,58 @@ class Scene(private val window: GameWindow) {
             }
         }
 
-        // --- Objektsteuerung (deins) ---
+        // Objektsteuerung
         if (chooseObj == 1) objectControl(dt, cubeMoveMode, cubeRenderable)
         else if (chooseObj == 2) objectControl(dt, coneMoveMode, coneRenderable)
-
-        // (Bike-) Kamera musst du hier nicht updaten/binden
     }
 
-
-    fun objectControl (dt: Float, moveMode: Boolean, renderable: Renderable?) {     // Implementiert die move und rotation logik der Objekte
+    // --- Objektsteuerung: Bewegen/Rotieren mit Pfeiltasten + TAB ---
+    fun objectControl(dt: Float, moveMode: Boolean, renderable: Renderable?) {
         val speed = Math.toRadians(90.0).toFloat()
-
-        if(moveMode) {
-            if (window.getKeyState(GLFW_KEY_UP)) {
-                renderable?.translate(Vector3f(0f, 0f, -speed * dt))
-            }
-            if (window.getKeyState(GLFW_KEY_DOWN)) {
-                renderable?.translate(Vector3f(0f, 0f, speed * dt))
-            }
-            if (window.getKeyState(GLFW_KEY_LEFT)) {
-                renderable?.translate(Vector3f(-speed * dt, 0f, 0f))
-            }
-            if (window.getKeyState(GLFW_KEY_RIGHT)) {
-                renderable?.translate(Vector3f(speed * dt, 0f, 0f))
-            }
+        if (moveMode) {
+            if (window.getKeyState(GLFW_KEY_UP))    renderable?.translate(Vector3f(0f, 0f, -speed * dt))
+            if (window.getKeyState(GLFW_KEY_DOWN))  renderable?.translate(Vector3f(0f, 0f,  speed * dt))
+            if (window.getKeyState(GLFW_KEY_LEFT))  renderable?.translate(Vector3f(-speed * dt, 0f, 0f))
+            if (window.getKeyState(GLFW_KEY_RIGHT)) renderable?.translate(Vector3f( speed * dt, 0f, 0f))
         } else {
-            if (window.getKeyState(GLFW_KEY_UP)) {
-                renderable?.rotate(-speed * dt, 0f, 0f)
-            }
-            if (window.getKeyState(GLFW_KEY_DOWN)) {
-                renderable?.rotate(speed * dt, 0f, 0f)
-            }
-            if (window.getKeyState(GLFW_KEY_LEFT)) {
-                renderable?.rotate(0f, -speed * dt, 0f)
-            }
-            if (window.getKeyState(GLFW_KEY_RIGHT)) {
-                renderable?.rotate(0f, speed * dt, 0f)
-            }
+            if (window.getKeyState(GLFW_KEY_UP))    renderable?.rotate(-speed * dt, 0f, 0f)
+            if (window.getKeyState(GLFW_KEY_DOWN))  renderable?.rotate( speed * dt, 0f, 0f)
+            if (window.getKeyState(GLFW_KEY_LEFT))  renderable?.rotate(0f, -speed * dt, 0f)
+            if (window.getKeyState(GLFW_KEY_RIGHT)) renderable?.rotate(0f,  speed * dt, 0f)
         }
     }
 
-    fun onKey(key: Int, scancode: Int, action: Int, mode: Int) {                            // Tastatur Interaktion
-        if (key == GLFW_KEY_TAB && action == GLFW_PRESS) {                                  // beim drücken von TAB
-            when (chooseObj) {                                                              // wird geschaut welchen Wert chooseObj hat
-                1 -> {cubeMoveMode = !cubeMoveMode                                          // bei 1 wird der Mode von Objekt 1 verändert
-                    println("Move-Mode: ${if(cubeMoveMode) "Bewegen" else "Rotieren" }")
-                }
-                2 -> {coneMoveMode = !coneMoveMode                                          // bei 2 wird der Mode von Objekt 2 verändert
-                    println("Move-Mode: ${if(coneMoveMode) "Bewegen" else "Rotieren" }")
-                }
+    // --- Tastatur ---
+    fun onKey(key: Int, scancode: Int, action: Int, mode: Int) {
+        if (key == GLFW_KEY_TAB && action == GLFW_PRESS) {
+            when (chooseObj) {
+                1 -> { cubeMoveMode = !cubeMoveMode; println("Cube: ${if (cubeMoveMode) "Bewegen" else "Rotieren"}") }
+                2 -> { coneMoveMode = !coneMoveMode; println("Cone: ${if (coneMoveMode) "Bewegen" else "Rotieren"}") }
             }
         }
-
         if (key == GLFW_KEY_C && action == GLFW_PRESS) {
             activeCam = 1 - activeCam
-            println("Aktive Kamera: ${if (activeCam == 0) "Cam 1 (ohne Pitch)" else "Cam 2 (Pitch erlaubt)"}")
+            println("Aktive Kamera: ${if (activeCam == 0) "Cam 1 (Yaw, kein Pitch)" else "Cam 2 (Pitch, kein Yaw)"}")
         }
-        if( key == GLFW_KEY_1 && action == GLFW_PRESS) {                                    // beim drücken von 1 bekommt chooseObj den Wert 1
-            chooseObj = 1
-            println("Objekt $chooseObj ausgewählt")
-        } else if (key == GLFW_KEY_2 && action == GLFW_PRESS) {                             // beim drücken von 1 bekommt chooseObj den Wert 2
-            chooseObj = 2
-            println("Objekt $chooseObj ausgewählt")
-        }
+        if (key == GLFW_KEY_T && action == GLFW_PRESS) cycleCameraTarget(true)   // nächstes Ziel
+        if (key == GLFW_KEY_R && action == GLFW_PRESS) cycleCameraTarget(false)  // vorheriges Ziel
+
+        if (key == GLFW_KEY_1 && action == GLFW_PRESS) { chooseObj = 1; println("Objekt $chooseObj ausgewählt (Cube)") }
+        if (key == GLFW_KEY_2 && action == GLFW_PRESS) { chooseObj = 2; println("Objekt $chooseObj ausgewählt (Cone)") }
     }
 
+    // --- Maus: optional Yaw nur für Cam1 ---
     fun onMouseMove(xpos: Double, ypos: Double) {
-        // Wird beim ersten MouseMove ausgelöst, um den Startwert zu speichern
-        if (firstMouseMove) {
-            lastMouseX = xpos           // Startposition merken
-            firstMouseMove = false
-            return
-        }
-
+        if (firstMouseMove) { lastMouseX = xpos; firstMouseMove = false; return }
         val dx = xpos - lastMouseX
-        lastMouseX = xpos               // Neue Position merken
-
+        lastMouseX = xpos
         val sensitivity = 0.002f
-        val yaw = (-dx * sensitivity).toFloat()  // Umrechnung in Winkel (negiert, damit Richtung stimmt)
-
-        camera.rotateAroundPoint(0f, yaw, 0f, Vector3f(0f))
+        val dy = (-dx * sensitivity).toFloat()
+        if (activeCam == 0) { // nur Cam1 darf yaw
+            rig1.rotate(0f, dy, 0f)
+            yaw1 += dy
+        }
     }
-
 
     fun cleanup() {}
 }
