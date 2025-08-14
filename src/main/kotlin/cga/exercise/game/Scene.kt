@@ -144,7 +144,7 @@ class Scene(private val window: GameWindow) {
         // Orbit-Rig 1 (Standard-Yaw um Y; Pitch bleibt 0)
         rig1.parent = cubeRenderable
         cam1.parent = rig1
-        cam1.translate(Vector3f(0f, 0f, dist1))
+        cam1.translate(Vector3f(0f, 1.0f, dist1))
         rig1.rotate(pitch1, 0f, 0f) // = 0
 
         // Orbit-Rig 2 (andere Ebene: 90° um X vorrotiert, Pitch erlaubt)
@@ -432,7 +432,6 @@ class Scene(private val window: GameWindow) {
                     println("Move-Mode: ${if(coneMoveMode) "Bewegen" else "Rotieren" }")
                 }
             }
-
         }
 
         if (key == GLFW_KEY_C && action == GLFW_PRESS) {
