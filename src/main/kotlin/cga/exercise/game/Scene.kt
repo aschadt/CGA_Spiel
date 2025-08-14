@@ -141,19 +141,6 @@ class Scene(private val window: GameWindow) {
         camera.rotate(Math.toRadians(-25.0).toFloat(), 0f, 0f) // Kamera um -35° um X-Achse neigen
         camera.translate(Vector3f(0.0f, 1.0f, 4.0f)) // Kamera um 4 Einheiten zurücksetzen
 
-        // Orbit-Rig 1 (Standard-Yaw um Y; Pitch bleibt 0)
-        rig1.parent = cubeRenderable
-        cam1.parent = rig1
-        cam1.translate(Vector3f(0f, 1.0f, dist1))
-        rig1.rotate(pitch1, 0f, 0f) // = 0
-
-        // Orbit-Rig 2 (andere Ebene: 90° um X vorrotiert, Pitch erlaubt)
-        rig2.parent = cubeRenderable
-        rig2.rotate(Math.toRadians(90.0).toFloat(), 0f, 0f)
-        cam2.parent = rig2
-        cam2.translate(Vector3f(0f, 0f, dist2))
-        rig2.rotate(pitch2, 0f, 0f)
-
         //PointLight an Motorrad parenten
         pointLight.parent = motorrad
         pointLight.translate(Vector3f(0f, 1.5f, 0f))
@@ -240,8 +227,18 @@ class Scene(private val window: GameWindow) {
         coneRenderable?.translate(Vector3f(0.0f, 2.0f, -2.0f))
         coneRenderable?.scale(Vector3f(0.5f, 0.5f, 0.5f))
 
+        // Orbit-Rig 1 (Standard-Yaw um Y; Pitch bleibt 0)
+        rig1.parent = cubeRenderable
+        cam1.parent = rig1
+        cam1.translate(Vector3f(0f, 1.0f, dist1))
+        rig1.rotate(pitch1, 0f, 0f) // = 0
 
-
+        // Orbit-Rig 2 (andere Ebene: 90° um X vorrotiert, Pitch erlaubt)
+        rig2.parent = cubeRenderable
+        rig2.rotate(Math.toRadians(0.0).toFloat(), 0f, 0f)
+        cam2.parent = rig2
+        cam2.translate(Vector3f(0f, 0f, dist2))
+        rig2.rotate(pitch2, 0f, 0f)
 
         //initial opengl state
         glClearColor(0.0f, 0.0f, 0.0f, 1.0f); GLError.checkThrow()
@@ -249,8 +246,6 @@ class Scene(private val window: GameWindow) {
         glEnable(GL_CULL_FACE)
         glCullFace(GL_BACK)
         glFrontFace(GL_CCW)
-
-
     }
 
     private fun getActiveCamera(): TronCamera = if (activeCam == 0) cam1 else cam2
@@ -320,37 +315,31 @@ class Scene(private val window: GameWindow) {
         val moveSpeed = 8.0f
         val rotateSpeed = Math.toRadians(90.0).toFloat()
 
-        //Motorrad controlls
+        // --- Motorrad-Controls (deins, unverändert) ---
         if (window.getKeyState(GLFW_KEY_W)) {
             motorrad?.translate(Vector3f(0f, 0f, -moveSpeed * dt))
-            if (window.getKeyState(GLFW_KEY_A)) {
-                motorrad?.rotate(0f, rotateSpeed * dt, 0f)
-            }
-            if (window.getKeyState(GLFW_KEY_D)) {
-                motorrad?.rotate(0f, -rotateSpeed * dt, 0f)
-            }
+            if (window.getKeyState(GLFW_KEY_A)) motorrad?.rotate(0f,  rotateSpeed * dt, 0f)
+            if (window.getKeyState(GLFW_KEY_D)) motorrad?.rotate(0f, -rotateSpeed * dt, 0f)
         }
         if (window.getKeyState(GLFW_KEY_S)) {
-            motorrad?.translate(Vector3f(0f, 0f, moveSpeed * dt))
-            if (window.getKeyState(GLFW_KEY_A)) {
-                motorrad?.rotate(0f, -rotateSpeed * dt, 0f)
-            }
-            if (window.getKeyState(GLFW_KEY_D)) {
-                motorrad?.rotate(0f, rotateSpeed * dt, 0f)
-            }
+            motorrad?.translate(Vector3f(0f, 0f,  moveSpeed * dt))
+            if (window.getKeyState(GLFW_KEY_A)) motorrad?.rotate(0f, -rotateSpeed * dt, 0f)
+            if (window.getKeyState(GLFW_KEY_D)) motorrad?.rotate(0f,  rotateSpeed * dt, 0f)
         }
 
-        // Aktives Rig & Cam
+        // --- Aktives Rig & Cam ---
         val rig = getActiveRig()
         val cam = getActiveCamera()
 
-        // Orbit: Yaw (J/L)
-        val yawDir =
-            (if (window.getKeyState(GLFW_KEY_J)) +1f else 0f) +
-                    (if (window.getKeyState(GLFW_KEY_L)) -1f else 0f)
-        if (yawDir != 0f) rig.rotate(0f, yawDir * yawSpeed * dt, 0f)
+        // --- Yaw (J/L): NUR Cam 1 ---
+        if (activeCam == 0) {
+            val yawDir =
+                (if (window.getKeyState(GLFW_KEY_J)) +1f else 0f) +
+                        (if (window.getKeyState(GLFW_KEY_L)) -1f else 0f)
+            if (yawDir != 0f) rig.rotate(0f, yawDir * yawSpeed * dt, 0f)
+        }
 
-        // Orbit: Pitch (I/K) — nur für Cam 2 erlaubt
+        // --- Pitch (I/K): NUR Cam 2 ---
         if (activeCam == 1) {
             var dp = 0f
             if (window.getKeyState(GLFW_KEY_I)) dp += +pitchSpeed * dt
@@ -363,7 +352,7 @@ class Scene(private val window: GameWindow) {
             }
         }
 
-        // Orbit: Zoom (U/O) — beide Cams
+        // --- Zoom (U/O): beide Cams ---
         var zDelta = 0f
         if (window.getKeyState(GLFW_KEY_U)) zDelta += -zoomSpeed * dt
         if (window.getKeyState(GLFW_KEY_O)) zDelta += +zoomSpeed * dt
@@ -377,18 +366,13 @@ class Scene(private val window: GameWindow) {
             }
         }
 
-        // Controls
-        if(chooseObj == 1) {
-            objectControl(dt,cubeMoveMode,cubeRenderable)               // wendet die move und rotation logik auf Objekt 1 an
-        } else if(chooseObj == 2) {
-            objectControl(dt,coneMoveMode,coneRenderable)               // wendet die move und rotation logik auf Objekt 2 an
-        }
+        // --- Objektsteuerung (deins) ---
+        if (chooseObj == 1) objectControl(dt, cubeMoveMode, cubeRenderable)
+        else if (chooseObj == 2) objectControl(dt, coneMoveMode, coneRenderable)
 
-
-        // Kamera-Matrizen aktualisieren
-        camera.getCalculateViewMatrix()
-        camera.getCalculateProjectionMatrix()
+        // (Bike-) Kamera musst du hier nicht updaten/binden
     }
+
 
     fun objectControl (dt: Float, moveMode: Boolean, renderable: Renderable?) {     // Implementiert die move und rotation logik der Objekte
         val speed = Math.toRadians(90.0).toFloat()
