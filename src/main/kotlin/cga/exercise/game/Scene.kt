@@ -45,8 +45,62 @@ class Scene(private val window: GameWindow) {
     )
 
 
+<<<<<<< Updated upstream
+=======
+    // Orbit-Parameter (aktuelle Inkremente)
+    private var yaw1 = 0f               // Cam1: Yaw erlaubt
+    private var pitch1 = 0f             // Cam1: Pitch gesperrt (bleibt 0)
+    private var dist1 = 6.0f
+>>>>>>> Stashed changes
 
 
+<<<<<<< Updated upstream
+=======
+    private val yawSpeed = 1.4f
+    private val pitchSpeed = 1.0f
+    private val pitchMin = -1.2f
+    private val pitchMax =  1.2f
+    private val distMin  = 2.0f         // Distanz wird für Snap/Start verwendet (nicht zum Zoomen)
+    private val distMax  = 20.0f
+
+    // --- NEU: FOV-„Zoom“ statt Dolly ---
+    private val fovMinRad = Math.toRadians(20.0).toFloat()
+    private val fovMaxRad = Math.toRadians(100.0).toFloat()
+    private val fovZoomSpeedRad = Math.toRadians(60.0).toFloat() // 60° pro Sekunde
+
+    private var activeCam = 0 // 0 = cam1, 1 = cam2
+
+    // --- Kamera-Ziele & Defaults/Hard-Snap ---
+    private val camTargets = mutableListOf<Transformable>()
+    private var camTargetIndex = 0
+    private var currentCamTarget: Transformable? = null
+
+    private val cam1DefaultYaw = 0f
+    private val cam1DefaultPitch = 0f
+
+    private val cam2DefaultYaw = 0f
+    private val cam2DefaultPitch = -0.35f
+
+    // Höhe der Kamera (Y-Offset relativ zum Target): fürs Motorrad anders
+    private val cam1YOffsetDefault = 1.0f
+    private val cam1YOffsetBike    = 4.0f
+    private val cam2YOffsetDefault = 0.0f
+    private val cam2YOffsetBike    = 0.8f
+
+    private fun cam1YOffsetFor(target: Transformable?): Float =
+        if (target != null && target === motorrad) cam1YOffsetBike else cam1YOffsetDefault
+    private fun cam2YOffsetFor(target: Transformable?): Float =
+        if (target != null && target === motorrad) cam2YOffsetBike else cam2YOffsetDefault
+
+    // Pro-Target Orbit-States je Kamera
+    private data class OrbitState(var yaw: Float = 0f, var pitch: Float = 0f, var dist: Float = 6f)
+    private val cam1States = mutableMapOf<Transformable, OrbitState>()
+    private val cam2States = mutableMapOf<Transformable, OrbitState>()
+
+    // Maus (optionales Yaw für Cam1)
+    private var firstMouseMove = true
+    private var lastMouseX = 0.0
+>>>>>>> Stashed changes
 
     //scene setup
     init {
@@ -107,12 +161,24 @@ class Scene(private val window: GameWindow) {
         motorrad = ModelLoader.loadModel("assets/models/Light Cycle/HQ_Movie cycle.obj", Math.toRadians(-90.0).toFloat(), Math.toRadians(90.0).toFloat(),0f)
         motorrad?.scale(Vector3f(0.8f))
 
+<<<<<<< Updated upstream
         // Kamera an Motorrad parenten
         camera.parent = motorrad
         camera.rotate(Math.toRadians(-35.0).toFloat(), 0f, 0f) // Kamera um -35° um X-Achse neigen
         camera.translate(Vector3f(0.0f, 0.0f, 4.0f)) // Kamera um 4 Einheiten zurücksetzen
 
         //PointLight an Motorrad parenten
+=======
+        // ---------- Motorrad (optional) ----------
+        motorrad = ModelLoader.loadModel(
+            "assets/models/Light Cycle/HQ_Movie cycle.obj",
+            Math.toRadians(-90.0).toFloat(),
+            Math.toRadians(90.0).toFloat(),
+            0f
+        )?.apply { scale(Vector3f(0.8f)) }
+
+        // ---------- Lichter ----------
+>>>>>>> Stashed changes
         pointLight.parent = motorrad
         pointLight.translate(Vector3f(0f, 1.5f, 0f))
 
@@ -124,9 +190,32 @@ class Scene(private val window: GameWindow) {
             outerAngle = Math.toRadians(25.0).toFloat()
         )
 
+<<<<<<< Updated upstream
         // SpotLight an das Motorrad anhängen (mitbewegen!)
         spotLight?.parent = motorrad
 
+=======
+        // ---------- Orbit-Setup ----------
+        cam1.parent = rig1
+        cam2.parent = rig2
+        cam1.translate(Vector3f(0f, cam1YOffsetDefault, dist1))
+        cam2.translate(Vector3f(0f, cam2YOffsetDefault, dist2))
+        // rig2-Ebene kippen (hier 270° = -90° um X)
+        rig2.rotate(Math.toRadians(270.0).toFloat(), 0f, 0f)
+        if (abs(pitch1) > 1e-6f) rig1.rotate(pitch1, 0f, 0f)
+        if (abs(pitch2) > 1e-6f) rig2.rotate(pitch2, 0f, 0f)
+
+        // Start-FOVs für beide Kameras (für FOV-Zoom wichtig)
+        cam1.fovRad = Math.toRadians(90.0).toFloat()
+        cam2.fovRad = Math.toRadians(90.0).toFloat()
+
+        // ---------- Kamera-Ziele & Start (Hard-Snap) ----------
+        camTargets.clear()
+        cubeRenderable?.let { camTargets += it }
+        coneRenderable?.let { camTargets += it }
+        motorrad?.let     { camTargets += it }
+        if (camTargets.isNotEmpty()) setCameraTarget(camTargets[0], snap = true)
+>>>>>>> Stashed changes
 
 
         //initial opengl state
@@ -139,6 +228,88 @@ class Scene(private val window: GameWindow) {
 
     }
 
+<<<<<<< Updated upstream
+=======
+    // --- Aktive Kamera/Rig/Parameter ---
+    private fun getActiveCamera(): TronCamera = if (activeCam == 0) cam1 else cam2
+    private fun getActiveRig(): Transformable = if (activeCam == 0) rig1 else rig2
+    private fun getPitchRef(): Float = if (activeCam == 0) pitch1 else pitch2
+    private fun setPitchRef(v: Float) { if (activeCam == 0) pitch1 = v else pitch2 = v }
+    private fun getDistRef(): Float = if (activeCam == 0) dist1 else dist2
+    private fun setDistRef(v: Float) { if (activeCam == 0) dist1 = v else dist2 = v }
+
+    // --- Ziel wählen (speichert Pose pro altem Target, lädt Pose des neuen Targets; Y-Offset je Ziel) ---
+    private fun setCameraTarget(target: Transformable, snap: Boolean = true) {
+        val eps = 1e-6f
+
+        // 1) Bisheriges Target speichern
+        currentCamTarget?.let { prev ->
+            cam1States[prev] = OrbitState(yaw = yaw1, pitch = pitch1, dist = dist1)
+            cam2States[prev] = OrbitState(yaw = yaw2, pitch = pitch2, dist = dist2)
+        }
+
+        // 2) Neues Target aktivieren
+        currentCamTarget = target
+        rig1.parent = target
+        rig2.parent = target
+        spotLight?.parent = target
+        pointLight.parent = target
+
+        if (!snap) return
+
+        // 3) States laden (oder Defaults)
+        val s1 = cam1States[target] ?: OrbitState(
+            yaw = cam1DefaultYaw, pitch = cam1DefaultPitch, dist = dist1
+        )
+        val s2 = cam2States[target] ?: OrbitState(
+            yaw = cam2DefaultYaw, pitch = cam2DefaultPitch, dist = dist2
+        )
+
+        // 4) Rigs zurückdrehen und Zielpose anwenden
+        // Cam1
+        if (abs(yaw1)   > eps) rig1.rotate(0f, -yaw1, 0f)
+        if (abs(pitch1) > eps) rig1.rotate(-pitch1, 0f, 0f)
+        yaw1 = s1.yaw; pitch1 = s1.pitch
+        if (abs(pitch1) > eps) rig1.rotate(pitch1, 0f, 0f)
+        if (abs(yaw1)   > eps) rig1.rotate(0f, yaw1, 0f)
+
+        // Cam2
+        if (abs(yaw2)   > eps) rig2.rotate(0f, -yaw2, 0f)
+        if (abs(pitch2) > eps) rig2.rotate(-pitch2, 0f, 0f)
+        yaw2 = s2.yaw; pitch2 = s2.pitch
+        if (abs(pitch2) > eps) rig2.rotate(pitch2, 0f, 0f)
+        if (abs(yaw2)   > eps) rig2.rotate(0f, yaw2, 0f)
+
+        // 5) Distanz & zielabhängigen Y-Offset setzen (Distanz nur für Start/Snap)
+        // Cam1
+        val p1 = cam1.getPosition()
+        dist1 = s1.dist
+        val y1 = cam1YOffsetFor(target)
+        val dY1 = y1    - p1.y
+        val dZ1 = dist1 - p1.z
+        if (abs(dY1) > eps || abs(dZ1) > eps) cam1.translate(Vector3f(0f, dY1, dZ1))
+
+        // Cam2
+        val p2 = cam2.getPosition()
+        dist2 = s2.dist
+        val y2 = cam2YOffsetFor(target)
+        val dY2 = y2    - p2.y
+        val dZ2 = dist2 - p2.z
+        if (abs(dY2) > eps || abs(dZ2) > eps) cam2.translate(Vector3f(0f, dY2, dZ2))
+    }
+
+    private fun cycleCameraTarget(forward: Boolean = true) {
+        if (camTargets.isEmpty()) return
+        camTargetIndex = if (forward)
+            (camTargetIndex + 1) % camTargets.size
+        else
+            (camTargetIndex - 1 + camTargets.size) % camTargets.size
+        setCameraTarget(camTargets[camTargetIndex], snap = true)
+        println("Kamera-Ziel: $camTargetIndex / ${camTargets.size}")
+    }
+
+    // --- Render ---
+>>>>>>> Stashed changes
     fun render(dt: Float, t: Float) {
         glClear(GL_COLOR_BUFFER_BIT or GL_DEPTH_BUFFER_BIT)
         staticShader.use()
@@ -159,12 +330,29 @@ class Scene(private val window: GameWindow) {
             staticShader.setUniform("pointLight_colors[$index]", light.color)
         }
 
+<<<<<<< Updated upstream
         // View-Matrix abrufen
         val viewMatrix = camera.getCalculateViewMatrix()
 
         staticShader.setUniform("pointLight_color", pointLight.color)
         spotLight?.let { staticShader.setUniform("spotLight_color", it.color) }
 
+=======
+        // Einzelnes PointLight (vertex shader 'light_position')
+        pointLight.bind(staticShader)
+
+        // Spotlight (auf aktuelles Target ausrichten)
+        spotLight?.let { sp ->
+            staticShader.setUniform("spotLight_color", sp.color)
+            sp.bind(staticShader, view)
+            val target = currentCamTarget ?: cubeRenderable
+            target?.let {
+                val dirWorld = Vector3f(it.getWorldPosition()).sub(sp.getWorldPosition()).normalize()
+                val dirView  = view.transformDirection(dirWorld, Vector3f()).normalize()
+                staticShader.setUniform("spot_direction_view", dirView)
+            }
+        }
+>>>>>>> Stashed changes
 
         spotLight?.bind(staticShader, camera.getCalculateViewMatrix())
 
@@ -191,6 +379,10 @@ class Scene(private val window: GameWindow) {
         val moveSpeed = 8.0f
         val rotateSpeed = Math.toRadians(90.0).toFloat()
 
+<<<<<<< Updated upstream
+=======
+        // Motorrad-Controls (optional)
+>>>>>>> Stashed changes
         if (window.getKeyState(GLFW_KEY_W)) {
             motorrad?.translate(Vector3f(0f, 0f, -moveSpeed * dt))
             if (window.getKeyState(GLFW_KEY_A)) {
@@ -202,6 +394,7 @@ class Scene(private val window: GameWindow) {
             }
         }
         if (window.getKeyState(GLFW_KEY_S)) {
+<<<<<<< Updated upstream
             motorrad?.translate(Vector3f(0f, 0f, moveSpeed * dt))
             if (window.getKeyState(GLFW_KEY_A)) {
                 motorrad?.rotate(0f, -rotateSpeed * dt, 0f)
@@ -209,15 +402,64 @@ class Scene(private val window: GameWindow) {
             if (window.getKeyState(GLFW_KEY_D)) {
                 motorrad?.rotate(0f, rotateSpeed * dt, 0f)
                 //motorrad?.translate(Vector3f(0f, 0f, -moveSpeed * dt))
+=======
+            motorrad?.translate(Vector3f(0f, 0f,  moveSpeed * dt))
+            if (window.getKeyState(GLFW_KEY_A)) motorrad?.rotate(0f, -rotateSpeed * dt, 0f)
+            if (window.getKeyState(GLFW_KEY_D)) motorrad?.rotate(0f,  rotateSpeed * dt, 0f)
+        }
+
+        val rig = getActiveRig()
+        val cam = getActiveCamera()
+
+        // Yaw (J/L): nur Cam1
+        if (activeCam == 0) {
+            val yawDir = (if (window.getKeyState(GLFW_KEY_J)) +1f else 0f) +
+                    (if (window.getKeyState(GLFW_KEY_L)) -1f else 0f)
+            if (yawDir != 0f) {
+                val dy = yawDir * yawSpeed * dt
+                rig.rotate(0f, dy, 0f)
+                yaw1 += dy
+>>>>>>> Stashed changes
             }
         }
 
 
+<<<<<<< Updated upstream
         // Kamera-Matrizen aktualisieren
         camera.getCalculateViewMatrix()
         camera.getCalculateProjectionMatrix()
     }
 
+=======
+        // --- NEU: Zoom (U/O) über FOV, NICHT über Distanz ---
+        var fovDelta = 0f
+        if (window.getKeyState(GLFW_KEY_U)) fovDelta += -fovZoomSpeedRad * dt   // reinzoomen -> kleineres FOV
+        if (window.getKeyState(GLFW_KEY_O)) fovDelta +=  +fovZoomSpeedRad * dt  // rauszoomen -> größeres FOV
+        if (fovDelta != 0f) {
+            cam.fovRad = (cam.fovRad + fovDelta).coerceIn(fovMinRad, fovMaxRad)
+        }
+
+        // Objektsteuerung
+        if (chooseObj == 1) objectControl(dt, cubeMoveMode, cubeRenderable)
+        else if (chooseObj == 2) objectControl(dt, coneMoveMode, coneRenderable)
+    }
+
+    // --- Objektsteuerung ---
+    fun objectControl(dt: Float, moveMode: Boolean, renderable: Renderable?) {
+        val speed = Math.toRadians(90.0).toFloat()
+        if (moveMode) {
+            if (window.getKeyState(GLFW_KEY_UP))    renderable?.translate(Vector3f(0f, 0f, -speed * dt))
+            if (window.getKeyState(GLFW_KEY_DOWN))  renderable?.translate(Vector3f(0f, 0f,  speed * dt))
+            if (window.getKeyState(GLFW_KEY_LEFT))  renderable?.translate(Vector3f(-speed * dt, 0f, 0f))
+            if (window.getKeyState(GLFW_KEY_RIGHT)) renderable?.translate(Vector3f( speed * dt, 0f, 0f))
+        } else {
+            if (window.getKeyState(GLFW_KEY_UP))    renderable?.rotate(-speed * dt, 0f, 0f)
+            if (window.getKeyState(GLFW_KEY_DOWN))  renderable?.rotate( speed * dt, 0f, 0f)
+            if (window.getKeyState(GLFW_KEY_LEFT))  renderable?.rotate(0f, -speed * dt, 0f)
+            if (window.getKeyState(GLFW_KEY_RIGHT)) renderable?.rotate(0f,  speed * dt, 0f)
+        }
+    }
+>>>>>>> Stashed changes
 
 
     fun onKey(key: Int, scancode: Int, action: Int, mode: Int) {}
