@@ -481,7 +481,7 @@ class Scene(private val window: GameWindow) {
         motorrad?.render(staticShader)
 
         // --- NEU: zeitbasiertes Abdunkeln als Overlay ---
-        fadeOverlay.render(fadeAlpha())
+        fadeOverlay.draw(fadeAlpha())
     }
 
     // --- Update ---
