@@ -58,7 +58,7 @@ class Mesh(vertexdata: FloatArray, indexdata: IntArray, attributes: Array<Vertex
         render()                      // Normales Rendering aufrufen
     }
 
-    fun render() {
+    fun render() { //für depth pass
         glBindVertexArray(vaoId)
         glDrawElements(GL_TRIANGLES, indexcount, GL_UNSIGNED_INT, 0)
         glBindVertexArray(0)

@@ -1,117 +1,134 @@
 #version 330 core
 // Spotlight
-uniform vec3 spot_direction_view;     // Richtung des Spotlights im Viewspace
-uniform float spot_innerCutoff;       // Cosinus von innerem Kegelwinkel (ϕ)
-uniform float spot_outerCutoff;       // Cosinus von äußerem Kegelwinkel (γ)
+uniform vec3  spot_direction_view;
+uniform float spot_innerCutoff;
+uniform float spot_outerCutoff;
 
-// Lichtquellen
-uniform vec3 pointLight_color;        // (nicht mehr verwendet bei mehreren Lichtern)
-uniform vec3 spotLight_color;         // Lichtfarbe des Spotlights
+// Lichter
+uniform vec3 pointLight_color;
+uniform vec3 spotLight_color;
 
-uniform vec3 emission_tint;           // Zeit- oder Objektabhängiger Farbwert für Emission (z.B. grün beim Boden)
+uniform vec3 emission_tint;
 
 #define MAX_POINT_LIGHTS 5
-uniform int numPointLights;                                       // aktive Lichtquellen
-uniform vec3 pointLight_positions[MAX_POINT_LIGHTS];              // Positionen der zusätzlichen Punktlichter (Viewspace)
-uniform vec3 pointLight_colors[MAX_POINT_LIGHTS];                 // Farben der Punktlichter
+uniform int  numPointLights;
+uniform vec3 pointLight_positions[MAX_POINT_LIGHTS];
+uniform vec3 pointLight_colors[MAX_POINT_LIGHTS];
 
-// Empfängt interpolierte Werte vom Vertex-Shader
-in struct VertexData
-{
-    vec3 fragPos_view;      // Fragmentposition im Viewspace
-    vec3 normal_view;       // Normale im Viewspace
-    vec3 toLight_view;      // Richtung zum Hauptlicht
-    vec3 toCamera_view;     // Richtung zur Kamera
+// Vom Vertex-Shader
+in struct VertexData {
+    vec3 fragPos_view;
+    vec3 normal_view;
+    vec3 toLight_view;
+    vec3 toCamera_view;
 
-    vec3 color;             // Visualisierte Normale (wird hier nicht verwendet)
-    vec2 texCoords;         // UV-Koordinaten der Textur
+    vec3 color;
+    vec2 texCoords;
+
+    vec4 fragPos_lightSpace;   // NEU: Position im Licht-Raum
 } vertexData;
 
 const float gammaVal = 2.2;
 
-vec3 invgamma(vec3 color_gamma) {
-    return pow(color_gamma, vec3(gammaVal)); // von sRGB → linear
-}
+vec3 invgamma(vec3 c) { return pow(c, vec3(gammaVal)); }
+vec3 gamma(vec3 c)    { return pow(c, vec3(1.0 / gammaVal)); }
 
-vec3 gamma(vec3 color_linear) {
-    return pow(color_linear, vec3(1.0 / gammaVal)); // von linear → sRGB
-}
-
-
-// Ausgabe des Fragment-Shaders: finale Farbe des Pixels
+// Ausgabe
 out vec4 fragColor;
 
-// Material-Uniforms
+// Material
 uniform sampler2D material_diffuse;
 uniform sampler2D material_specular;
 uniform sampler2D material_emissive;
-uniform float material_shininess;
+uniform float     material_shininess;
 
+// ShadowMap
+uniform sampler2D shadowMap;
 
-void main(){
+// Shadow-Berechnung mit Bias + 3x3 PCF
+float ShadowCalculation(vec4 fragPosLightSpace, vec3 normal_view, vec3 lightDir_view)
+{
+    // Projektionsraum -> NDC -> [0,1]
+    vec3 projCoords = fragPosLightSpace.xyz / max(fragPosLightSpace.w, 1e-6);
+    projCoords = projCoords * 0.5 + 0.5;
 
-    // --- Normalisieren aller relevanten Richtungsvektoren ---
-    vec3 N = normalize(vertexData.normal_view);     // Normalvektor
-    vec3 L = normalize(vertexData.toLight_view);    // Richtung zur Hauptlichtquelle (Motorrad)
-    vec3 V = normalize(vertexData.toCamera_view);   // Richtung zur Kamera
-    vec3 R = reflect(-L, N);                        // Reflektierter Lichtstrahl (für Phong)
-    vec3 H = normalize(L + V);                      // Halfway-Vektor für Blinn-Phong
+    // Außerhalb des Lichtfrustums: kein Schatten
+    if (projCoords.z > 1.0) return 0.0;
 
-    // Entfernung zur HauptLichtquelle (Länge des Vektors toLight_view)
-    float distance = length(vertexData.toLight_view);
+    float currentDepth = projCoords.z;
 
-    // Lichtabschwächung nach Entfernung (Attenuation)
+    // Winkelabhängiger Bias gegen Shadow Acne
+    float bias = max(0.05 * (1.0 - max(dot(normalize(normal_view), normalize(lightDir_view)), 0.0)), 0.005);
+
+    // PCF 3x3
+    float shadow = 0.0;
+    vec2 texelSize = 1.0 / textureSize(shadowMap, 0);
+    for (int x = -1; x <= 1; ++x) {
+        for (int y = -1; y <= 1; ++y) {
+            float pcfDepth = texture(shadowMap, projCoords.xy + vec2(x, y) * texelSize).r;
+            shadow += (currentDepth - bias > pcfDepth) ? 1.0 : 0.0;
+        }
+    }
+    shadow /= 9.0;
+
+    return shadow;
+}
+
+void main()
+{
+    // Normale Richtungsvektoren
+    vec3 N = normalize(vertexData.normal_view);
+    vec3 L = normalize(vertexData.toLight_view);
+    vec3 V = normalize(vertexData.toCamera_view);
+    vec3 H = normalize(L + V);
+
+    float distance   = length(vertexData.toLight_view);
     float attenuation = 1.0 / (1.0 + 1.0 * distance + 1.0 * distance * distance);
 
-    // Spotlight-Einfluss berechnen (θ = Winkel zwischen Lichtstrahl und Fragment)
-    float theta = dot(-L, normalize(spot_direction_view));  // Winkel zwischen Licht und Richtung
-    float epsilon = spot_innerCutoff - spot_outerCutoff;    // Übergangsbereich
-    float intensity = clamp((theta - spot_outerCutoff) / epsilon, 0.0, 1.0); // Lichtintensität im Spotkegel
+    float theta   = dot(-L, normalize(spot_direction_view));
+    float epsilon = spot_innerCutoff - spot_outerCutoff;
+    float intensity = clamp((theta - spot_outerCutoff) / max(epsilon, 1e-6), 0.0, 1.0);
 
-
-    // --- Texturen laden ---
-    vec3 diffuseColor = invgamma(texture(material_diffuse, vertexData.texCoords).rgb);
+    // Texturen (linear)
+    vec3 diffuseColor  = invgamma(texture(material_diffuse,  vertexData.texCoords).rgb);
     vec3 specularColor = invgamma(texture(material_specular, vertexData.texCoords).rgb);
-    vec3 emissiveColor = invgamma(texture(material_emissive, vertexData.texCoords).rgb) * emission_tint;;
+    vec3 emissiveColor = invgamma(texture(material_emissive, vertexData.texCoords).rgb) * emission_tint;
 
-    // ---(Blinn-) Phong-Berechnung ---
+    // Beleuchtung
     float diff = max(dot(N, L), 0.0);
-    //float spec = pow(max(dot(R, V), 0.0), material_shininess);    // Phong
-    float spec = pow(max(dot(N, H), 0.0), material_shininess);      // Blinn-Phong
+    float spec = pow(max(dot(N, H), 0.0), material_shininess);
 
-    // 4 EckpointLights
-        vec3 pointDiffuse = vec3(0.0);    // Summe der Diffusanteile aller Pointlights
-        vec3 pointSpecular = vec3(0.0);   // Summe der Specularanteile aller Pointlights
+    // Punktlichter
+    vec3 pointDiffuse = vec3(0.0);
+    vec3 pointSpecular = vec3(0.0);
+    for (int i = 0; i < numPointLights; ++i) {
+        vec3 L_i = normalize(pointLight_positions[i] - vertexData.fragPos_view);
+        float d_i = length(pointLight_positions[i] - vertexData.fragPos_view);
+        float att_i = 1.0 / (1.0 + 3.0 * d_i + 0.1 * d_i * d_i);
 
-        for (int i = 0; i < numPointLights; ++i) {
-            vec3 L_i = normalize(pointLight_positions[i] - vertexData.fragPos_view);    // Richtung zur Hauptlichtquelle (Motorrad)
-            float d_i = length(pointLight_positions[i] - vertexData.fragPos_view);      // Abstand zum Lichtpunkt (distance)
-            float att_i = 1.0 / (1.0 + 3.0 * d_i + 0.1 * d_i * d_i);                    // Attenuation (angepasst)
+        vec3 H_i = normalize(L_i + V);
+        float diff_i = max(dot(N, L_i), 0.0);
+        float spec_i = pow(max(dot(N, H_i), 0.0), material_shininess);
 
-            vec3 H_i = normalize(L_i + V);                                      // Halfway-Vektor
-            float diff_i = max(dot(N, L_i), 0.0);                               // Diffuskomponente
-            float spec_i = pow(max(dot(N, H_i), 0.0), material_shininess);      // Specularkomponente
+        pointDiffuse  += att_i * diff_i * diffuseColor  * pointLight_colors[i];
+        pointSpecular += att_i * spec_i * specularColor * pointLight_colors[i];
+    }
 
-            // Beleuchtung pro Lichtquelle addieren
-            pointDiffuse += att_i * diff_i * diffuseColor * pointLight_colors[i];
-            pointSpecular += att_i * spec_i * specularColor * pointLight_colors[i];
-        }
+    // Spotlight-Beiträge (vor Schatten)
+    vec3 diffuse_SP  = (attenuation * intensity * 5.0) * diff * diffuseColor  * spotLight_color;
+    vec3 specular_SP = (attenuation * intensity * 5.0) * spec * specularColor * spotLight_color;
 
-    // PointLight-Anteil
-    vec3 diffuse_PL = pointDiffuse;
-    vec3 specular_PL = pointSpecular;
+    // Schatten nur auf Spotlight anwenden
+    float shadow = ShadowCalculation(vertexData.fragPos_lightSpace, N, L);
+    float lit = 1.0 - shadow;
 
-    // Spotlight-Anteil
-    vec3 diffuse_SP = (attenuation * intensity * 5) * diff * diffuseColor * spotLight_color;
-    vec3 specular_SP = (attenuation * intensity * 5) * spec * specularColor * spotLight_color;
-
-
-
-    // Ambient
+    // Ambient ohne Schatten
     vec3 ambient = 0.001 * diffuseColor;
 
-    // Final
-    vec3 result = ambient + diffuse_PL + specular_PL + diffuse_SP + specular_SP + emissiveColor;
-    fragColor = vec4(gamma(result), 1.0);
+    vec3 result = ambient
+    + pointDiffuse + pointSpecular
+    + lit * (diffuse_SP + specular_SP)
+    + emissiveColor;
 
+    fragColor = vec4(gamma(result), 1.0);
 }

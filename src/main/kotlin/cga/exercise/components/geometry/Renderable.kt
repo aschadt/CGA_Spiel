@@ -7,14 +7,28 @@ class Renderable(
 ) : Transformable(), IRenderable {
 
     override fun render(shaderProgram: ShaderProgram) {
-        // Setze die Model-Matrix im Shader
-        //println("Rendering ground...") // DEBUG
+        // Model-Matrix an den Shader übergeben
         shaderProgram.setUniform("model_matrix", getWorldModelMatrix())
 
-        // Rendere alle Meshes
+        // Alle Meshes mit Material binden und rendern
         for (mesh in meshes) {
-            mesh.material?.bind(shaderProgram)  // Material an den Shader binden
+            mesh.material?.bind(shaderProgram)
             mesh.render(shaderProgram)
+        }
+    }
+
+
+   //   Rendert nur die Geometrie für den Shadow-Depth-Pass.
+   //   Material wird hier NICHT gebunden, da nur Tiefenwerte gebraucht werden.
+
+    fun renderDepth(shaderProgram: ShaderProgram) {
+        // Model-Matrix setzen (wichtig für korrekte Transformation in Light Space)
+        shaderProgram.setUniform("model_matrix", getWorldModelMatrix())
+
+
+        // Meshes ohne Material rendern
+        for (mesh in meshes) {
+            mesh.render() // ohne shaderProgram, bindet nicht das Material
         }
     }
 }
