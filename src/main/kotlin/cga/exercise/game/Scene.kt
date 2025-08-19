@@ -104,6 +104,7 @@ class Scene(private val window: GameWindow) {
     private val cam2YOffsetDefault = 0.0f
     private val cam2YOffsetBike    = 0.8f
 
+    //Funktion um zu bestimmen, dass wenn das Motorrad aktuell das Ziel ist eine andere Höhe als die Objekte hat.
     private fun cam1YOffsetFor(target: Transformable?): Float =
         if (target != null && target === motorrad) cam1YOffsetBike else cam1YOffsetDefault
     private fun cam2YOffsetFor(target: Transformable?): Float =
