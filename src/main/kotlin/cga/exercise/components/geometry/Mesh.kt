@@ -14,7 +14,7 @@ import org.lwjgl.opengl.GL30.*
  *
  * Created by Fabian on 16.09.2017.
  */
-class Mesh(vertexdata: FloatArray, indexdata: IntArray, attributes: Array<VertexAttribute>, val material: Material? = null) {
+class Mesh(val vertexdata: FloatArray,val indexdata: IntArray, attributes: Array<VertexAttribute>, val material: Material? = null) {
     //private data
     private var vaoId = 0
     private var vboId = 0
@@ -58,7 +58,7 @@ class Mesh(vertexdata: FloatArray, indexdata: IntArray, attributes: Array<Vertex
         render()                      // Normales Rendering aufrufen
     }
 
-    fun render() { //für depth pass
+    fun render() {
         glBindVertexArray(vaoId)
         glDrawElements(GL_TRIANGLES, indexcount, GL_UNSIGNED_INT, 0)
         glBindVertexArray(0)

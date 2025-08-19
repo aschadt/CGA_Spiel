@@ -32,13 +32,15 @@ class Scene(private val window: GameWindow) {
     // --- Renderables ---
     private var groundRenderable: Renderable
     private var roomRenderable: Renderable
-    private var cubeRenderable: Renderable? = null
-    private var coneRenderable: Renderable? = null
+    private var obj1Renderable: Renderable? = null
+    private var obj2Renderable: Renderable? = null
+    private var obj3Renderable: Renderable? = null
     private var motorrad: Renderable? = null
 
     // --- Auswahl / Objektsteuerung ---
-    private var cubeMoveMode = true
-    private var coneMoveMode = true
+    private var obj1MoveMode = true
+    private var obj2MoveMode = true
+    private var obj3MoveMode = true
     private var chooseObj: Int = 0
 
     // --- Lichter ---
@@ -113,67 +115,172 @@ class Scene(private val window: GameWindow) {
     private var lastMouseX = 0.0
 
     init {
-        // ---------- Ground ----------
-        val groundObj = loadOBJ("assets/models/ground.obj")
-        val groundMeshList = groundObj.objects[0].meshes
-        val groundAttribs = arrayOf(
-            VertexAttribute(3, GL_FLOAT, 32, 0),
-            VertexAttribute(2, GL_FLOAT, 32, 12),
-            VertexAttribute(3, GL_FLOAT, 32, 20)
-        )
-
+        // Texturen laden
         val diffuse = Texture2D("assets/textures/ground_diff.png", true)
         val specular = Texture2D("assets/textures/ground_spec.png", true)
         val emissive = Texture2D("assets/textures/ground_emit.png", true)
-        diffuse.setTexParams(GL_REPEAT, GL_REPEAT, GL_LINEAR_MIPMAP_LINEAR, GL_LINEAR)
-        specular.setTexParams(GL_REPEAT, GL_REPEAT, GL_LINEAR_MIPMAP_LINEAR, GL_LINEAR)
-        emissive.setTexParams(GL_REPEAT, GL_REPEAT, GL_LINEAR_MIPMAP_LINEAR, GL_LINEAR)
-        val groundMaterial = Material(diffuse, emissive, specular, shininess = 60f, tcMultiplier = Vector2f(64f, 64f))
 
-        val groundMesh = Mesh(groundMeshList[0].vertexData, groundMeshList[0].indexData, groundAttribs, groundMaterial)
+        val diffuseWall = Texture2D("assets/textures/red_brick_diff_2k.jpg", true)
+        val specularWall = Texture2D("assets/textures/red_brick_rough_2k.jpg", true)
+
+        val diffuseGround = Texture2D("assets/textures/gray_rocks_diff_2k.jpg", true)
+        val specularGround = Texture2D("assets/textures/gray_rocks_rough_2k.jpg", true)
+
+        val emissiveBlack = Texture2D("assets/textures/schwarz.png", true)
+
+        // Texturparameter setzen
+        val wrap = GL_REPEAT
+        // sorgt für weichere Übergänge und schärfere Darstellung beim Verkleinern der Textur
+        val filter = GL_LINEAR_MIPMAP_LINEAR
+        // sorgt für glattere Darstellung ohne pixelige Kanten
+        val mipmap = GL_LINEAR
+
+        diffuse.setTexParams(wrap, wrap, filter, mipmap)
+        specular.setTexParams(wrap, wrap, filter, mipmap)
+        emissive.setTexParams(wrap, wrap, filter, mipmap)
+
+        // Material erzeugen
+        val oldGroundMaterial = Material(
+            diff = diffuse,
+            emit = emissive,
+            specular = specular,
+            shininess = 60.0f,
+            tcMultiplier = Vector2f(64.0f, 64.0f)
+        )
+        // Test Matrial erzeugen
+        val wallMaterial = Material(
+            diff = diffuseWall,
+            emit = emissiveBlack,
+            specular = specularWall,
+            shininess = 60.0f,
+            tcMultiplier = Vector2f(16.0f, 16.0f)
+        )
+
+        val groundMaterial = Material(
+            diff = diffuseGround,
+            emit = emissiveBlack,
+            specular = specularGround,
+            shininess = 60.0f,
+            tcMultiplier = Vector2f(16.0f, 16.0f)
+        )
+
+        //Ground Mesh
+
+        val groundObj = loadOBJ("assets/models/roomGround.obj")     // Objekt aus dem Ordner laden
+        val groundMeshList = groundObj.objects[0].meshes                // Meshes auf das Objekt setzen
+
+        val groundAttribs = arrayOf(
+            VertexAttribute(3, GL_FLOAT, 32, 0),   // Position
+            VertexAttribute(2, GL_FLOAT, 32, 12),  // Texture
+            VertexAttribute(3, GL_FLOAT, 32, 20)   // Normal
+        )
+
+        // Mesh mit Material erzeugen
+        val groundMesh = Mesh(
+            groundMeshList[0].vertexData,
+            groundMeshList[0].indexData,
+            groundAttribs,
+            groundMaterial
+        )
+
+        // Ground Renderable mit Material verwenden
         groundRenderable = Renderable(mutableListOf(groundMesh))
 
-        // ---------- Room ----------
-        val roomObj = loadOBJ("assets/models/room.obj")
-        val roomMeshList = roomObj.objects[0].meshes
+        //Room Mesh
+
+        val roomObj = loadOBJ("assets/models/roomWalls.obj")         // Objekt aus dem Ordner laden
+        val roomMeshList = roomObj.objects[0].meshes                   // Meshes auf das Objekt setzen
+
         val roomAttribs = arrayOf(
-            VertexAttribute(3, GL_FLOAT, 32, 0),
-            VertexAttribute(2, GL_FLOAT, 32, 12),
-            VertexAttribute(3, GL_FLOAT, 32, 20)
+            VertexAttribute(3, GL_FLOAT, 32, 0),   // Position
+            VertexAttribute(2, GL_FLOAT, 32, 12),  // Texture
+            VertexAttribute(3, GL_FLOAT, 32, 20)   // Normal
         )
-        val roomMesh = Mesh(roomMeshList[0].vertexData, roomMeshList[0].indexData, roomAttribs, groundMaterial)
-        roomRenderable = Renderable(mutableListOf(roomMesh)).apply {
-            scale(Vector3f(23.0f, 5.0f, 23.0f))
-            rotate(0f, Math.toRadians(-90.0).toFloat(), 0f)
-            translate(Vector3f(0.0f, 0.0f, 0.0f))
-        }
 
-        // ---------- Cube ----------
-        val cubeObj = loadOBJ("assets/models/cube.obj")
-        val cubeMeshList = cubeObj.objects[0].meshes
+        // Mesh mit Material erzeugen
+        val roomMesh = Mesh(
+            roomMeshList[0].vertexData,
+            roomMeshList[0].indexData,
+            roomAttribs,
+            wallMaterial
+        )
+        // Room Renderable mit Material verwenden
+        roomRenderable = Renderable(mutableListOf(roomMesh))
+
+        //roomRenderable.scale(Vector3f(23.0f, 5.0f, 23.0f))                  // Objekt skalieren, rotieren und verschieben
+        roomRenderable.rotate(0f, Math.toRadians(-90.0).toFloat(), 0f)
+        roomRenderable.translate(Vector3f(0.0f, 0.0f, 0.0f))
+
+
+        //Cube Mesh
+
+        val cubeObj = loadOBJ("assets/models/cube.obj")             // Objekt aus dem Ordner laden
+        val cubeMeshList = cubeObj.objects[0].meshes                       // Meshes auf das Objekt setzen
+
         val cubeAttribs = arrayOf(
-            VertexAttribute(3, GL_FLOAT, 32, 0),
-            VertexAttribute(2, GL_FLOAT, 32, 12),
-            VertexAttribute(3, GL_FLOAT, 32, 20)
+            VertexAttribute(3, GL_FLOAT, 32, 0),   // Position
+            VertexAttribute(2, GL_FLOAT, 32, 12),  // Texture
+            VertexAttribute(3, GL_FLOAT, 32, 20)   // Normal
         )
-        val cubeMesh = Mesh(cubeMeshList[0].vertexData, cubeMeshList[0].indexData, cubeAttribs, groundMaterial)
-        cubeRenderable = Renderable(mutableListOf(cubeMesh)).apply {
-            translate(Vector3f(0.0f, 2.0f, -4.0f))
-        }
+        // Mesh mit Material erzeugen
+        val cubeMesh = Mesh(
+            cubeMeshList[0].vertexData,
+            cubeMeshList[0].indexData,
+            cubeAttribs,
+            wallMaterial
+        )
+        // Cube Renderable mit Material verwenden
+        obj1Renderable = Renderable(mutableListOf(cubeMesh))
+        // Cube verschieben
+        obj1Renderable?.translate(Vector3f(2.0f, 2.0f, -2.0f))
+        obj1Renderable?.scale(Vector3f(0.5f,0.5f,0.5f))
 
-        // ---------- Cone ----------
-        val coneObj = loadOBJ("assets/models/cone.obj")
-        val coneMeshList = coneObj.objects[0].meshes
+        //Cone Mesh
+
+        val coneObj = loadOBJ("assets/models/cone.obj")             // Objekt aus dem Ordner laden
+        val coneMeshList = coneObj.objects[0].meshes                        // Meshes auf das Objekt setzen
+
         val coneAttribs = arrayOf(
-            VertexAttribute(3, GL_FLOAT, 32, 0),
-            VertexAttribute(2, GL_FLOAT, 32, 12),
-            VertexAttribute(3, GL_FLOAT, 32, 20)
+            VertexAttribute(3, GL_FLOAT, 32, 0),   // Position
+            VertexAttribute(2, GL_FLOAT, 32, 12),  // Texture
+            VertexAttribute(3, GL_FLOAT, 32, 20)   // Normal
         )
-        val coneMesh = Mesh(coneMeshList[0].vertexData, coneMeshList[0].indexData, coneAttribs, groundMaterial)
-        coneRenderable = Renderable(mutableListOf(coneMesh)).apply {
-            translate(Vector3f(0.0f, 2.0f, -2.0f))
-            scale(Vector3f(0.5f, 0.5f, 0.5f))
-        }
+        // Mesh mit Material erzeugen
+        val coneMesh = Mesh(
+            coneMeshList[0].vertexData,
+            coneMeshList[0].indexData,
+            coneAttribs,
+            oldGroundMaterial
+        )
+        // Cone Renderable mit Material verwenden
+        obj2Renderable = Renderable(mutableListOf(coneMesh))
+        // Cone verschieben und skalieren
+        obj2Renderable?.translate(Vector3f(0.0f, 2.0f, -2.0f))
+        obj2Renderable?.scale(Vector3f(0.5f, 0.5f, 0.5f))
+
+
+        //Cube Mesh
+
+        val zylinderObj = loadOBJ("assets/models/zylinder.obj")             // Objekt aus dem Ordner laden
+        val zylinderMeshList = zylinderObj.objects[0].meshes                       // Meshes auf das Objekt setzen
+
+        val zylinderAttribs = arrayOf(
+            VertexAttribute(3, GL_FLOAT, 32, 0),   // Position
+            VertexAttribute(2, GL_FLOAT, 32, 12),  // Texture
+            VertexAttribute(3, GL_FLOAT, 32, 20)   // Normal
+        )
+        // Mesh mit Material erzeugen
+        val zylinderMesh = Mesh(
+            zylinderMeshList[0].vertexData,
+            zylinderMeshList[0].indexData,
+            zylinderAttribs,
+            groundMaterial
+        )
+        // Objekt 3 Renderable mit Material verwenden
+        obj3Renderable = Renderable(mutableListOf(zylinderMesh))
+        // Objekt 3 verschieben
+        obj3Renderable?.translate(Vector3f(-2.0f, 2.0f, -2.0f))
+        obj3Renderable?.scale(Vector3f(0.5f,0.5f,0.5f))
 
         // ---------- Motorrad ----------
         motorrad = ModelLoader.loadModel(
@@ -225,8 +332,8 @@ class Scene(private val window: GameWindow) {
 
         // ---------- Kamera-Ziele ----------
         camTargets.clear()
-        cubeRenderable?.let { camTargets += it }
-        coneRenderable?.let { camTargets += it }
+        obj1Renderable?.let { camTargets += it }
+        obj2Renderable?.let { camTargets += it }
         motorrad?.let     { camTargets += it }
         if (camTargets.isNotEmpty()) setCameraTarget(camTargets[0], snap = true)
 
@@ -313,7 +420,7 @@ class Scene(private val window: GameWindow) {
         // Light-space 1: Test-Spot -> zielt auf Cone
         val ls1: Matrix4f? = testSpot?.let { sp ->
             val pos = sp.getWorldPosition()
-            val target = coneRenderable?.getWorldPosition() ?: Vector3f(0f, 2f, -2f)
+            val target = obj2Renderable?.getWorldPosition() ?: Vector3f(0f, 2f, -2f)
             shadow1.buildLightSpacePerspective(pos, target, fovRad = Math.toRadians(60.0).toFloat(), near = 0.1f, far = 100f)
         }
 
@@ -329,8 +436,8 @@ class Scene(private val window: GameWindow) {
             shadow1.beginDepthPass(ls1)
             val ds = shadow1.depthShader()
             groundRenderable.renderDepth(ds)
-            cubeRenderable?.renderDepth(ds)
-            coneRenderable?.renderDepth(ds)
+            obj1Renderable?.renderDepth(ds)
+            obj2Renderable?.renderDepth(ds)
             roomRenderable.renderDepth(ds)
             motorrad?.renderDepth(ds)
             shadow1.endDepthPass()
@@ -341,8 +448,8 @@ class Scene(private val window: GameWindow) {
             shadow2.beginDepthPass(ls2)
             val ds2 = shadow2.depthShader()
             groundRenderable.renderDepth(ds2)
-            cubeRenderable?.renderDepth(ds2)
-            coneRenderable?.renderDepth(ds2)
+            obj1Renderable?.renderDepth(ds2)
+            obj2Renderable?.renderDepth(ds2)
             roomRenderable.renderDepth(ds2)
             motorrad?.renderDepth(ds2)
             shadow2.endDepthPass()
@@ -373,7 +480,7 @@ class Scene(private val window: GameWindow) {
         testSpot?.let { sp ->
             staticShader.setUniform("spotLight_color", sp.color)
             sp.bind(staticShader, view)
-            val conePos = coneRenderable?.getWorldPosition() ?: Vector3f(0f, 2f, -2f)
+            val conePos = obj2Renderable?.getWorldPosition() ?: Vector3f(0f, 2f, -2f)
             val dirWorld = Vector3f(conePos).sub(sp.getWorldPosition()).normalize()
             val dirView  = view.transformDirection(dirWorld, Vector3f()).normalize()
             staticShader.setUniform("spot_direction_view", dirView)
@@ -397,9 +504,11 @@ class Scene(private val window: GameWindow) {
         val b = (sin(t * 1.3 + 4.0) * 0.5 + 0.5).toFloat()
         staticShader.setUniform("emission_tint", Vector3f(r, g, b))
 
-        cubeRenderable?.render(staticShader)
-        coneRenderable?.render(staticShader)
+        obj1Renderable?.render(staticShader)
+        obj2Renderable?.render(staticShader)
+        obj3Renderable?.render(staticShader)
         roomRenderable.render(staticShader)
+        groundRenderable.render(staticShader)
         motorrad?.render(staticShader)
     }
 
@@ -449,32 +558,91 @@ class Scene(private val window: GameWindow) {
         if (window.getKeyState(GLFW_KEY_O)) fovDelta +=  +fovZoomSpeedRad * dt
         if (fovDelta != 0f) cam.fovRad = (cam.fovRad + fovDelta).coerceIn(fovMinRad, fovMaxRad)
 
-        if (chooseObj == 1) objectControl(dt, cubeMoveMode, cubeRenderable)
-        else if (chooseObj == 2) objectControl(dt, coneMoveMode, coneRenderable)
+        // Controls
+        if(chooseObj == 1 && obj1Renderable != null) {
+            objectControl(dt,obj1MoveMode,obj1Renderable, listOfNotNull(obj2Renderable, obj3Renderable))               // wendet die move und rotation logik auf Objekt 1 an
+        } else if(chooseObj == 2 && obj2Renderable != null) {
+            objectControl(dt,obj2MoveMode,obj2Renderable, listOfNotNull(obj1Renderable, obj3Renderable))               // wendet die move und rotation logik auf Objekt 2 an
+        } else if (chooseObj == 3 && obj3Renderable != null) {
+            objectControl(dt,obj3MoveMode,obj3Renderable, listOfNotNull(obj1Renderable, obj2Renderable))
+        }
     }
 
-    fun objectControl(dt: Float, moveMode: Boolean, renderable: Renderable?) {
+    fun objectControl (dt: Float, moveMode: Boolean, renderable: Renderable?, allObjects: List<Renderable>) {     // Implementiert die move und rotation logik der Objekte
         val speed = Math.toRadians(90.0).toFloat()
-        if (moveMode) {
-            if (window.getKeyState(GLFW_KEY_UP))    renderable?.translate(Vector3f(0f, 0f, -speed * dt))
-            if (window.getKeyState(GLFW_KEY_DOWN))  renderable?.translate(Vector3f(0f, 0f,  speed * dt))
-            if (window.getKeyState(GLFW_KEY_LEFT))  renderable?.translate(Vector3f(-speed * dt, 0f, 0f))
-            if (window.getKeyState(GLFW_KEY_RIGHT)) renderable?.translate(Vector3f( speed * dt, 0f, 0f))
-        } else {
-            if (window.getKeyState(GLFW_KEY_UP))    renderable?.rotate(-speed * dt, 0f, 0f)
-            if (window.getKeyState(GLFW_KEY_DOWN))  renderable?.rotate( speed * dt, 0f, 0f)
-            if (window.getKeyState(GLFW_KEY_LEFT))  renderable?.rotate(0f, -speed * dt, 0f)
-            if (window.getKeyState(GLFW_KEY_RIGHT)) renderable?.rotate(0f,  speed * dt, 0f)
+
+        if(moveMode && renderable != null) {
+            if (window.getKeyState(GLFW_KEY_UP)) {
+                tryMove(renderable, Vector3f(0f, 0f, -speed * dt), allObjects)
+            }
+            if (window.getKeyState(GLFW_KEY_DOWN)) {
+                tryMove(renderable, Vector3f(0f, 0f, speed * dt), allObjects)
+            }
+            if (window.getKeyState(GLFW_KEY_LEFT)) {
+                tryMove(renderable, Vector3f(-speed * dt, 0f, 0f), allObjects)
+            }
+            if (window.getKeyState(GLFW_KEY_RIGHT)) {
+                tryMove(renderable, Vector3f(speed * dt, 0f, 0f), allObjects)
+            }
+        } else if (renderable != null) {
+            if (window.getKeyState(GLFW_KEY_UP)) {
+                tryRotate(renderable, Vector3f(-speed * dt, 0f, 0f), allObjects)
+            }
+            if (window.getKeyState(GLFW_KEY_DOWN)) {
+                tryRotate(renderable, Vector3f(speed * dt, 0f, 0f), allObjects)
+            }
+            if (window.getKeyState(GLFW_KEY_LEFT)) {
+                tryRotate(renderable, Vector3f(0f, -speed * dt, 0f), allObjects)
+            }
+            if (window.getKeyState(GLFW_KEY_RIGHT)) {
+                tryRotate(renderable, Vector3f(0f, speed * dt, 0f), allObjects)
+            }
+        }
+    }
+
+    private fun tryMove(obj: Renderable, move: Vector3f, others: List<Renderable>) {
+        obj.translate(move)
+
+        val currentBox = obj.getKollision()
+        val collision = others.any { it != obj && currentBox.intersects(it.getKollision()) }
+
+        if (collision) {
+            // Rückgängig machen
+            obj.translate(move.negate(Vector3f()))
+        }
+    }
+
+    private fun tryRotate(obj: Renderable, rot: Vector3f, others: List<Renderable>) {
+        obj.rotate(rot.x, rot.y, rot.z)
+
+        val currentBox = obj.getKollision()
+        val collision = others.any { it != obj && currentBox.intersects(it.getKollision()) }
+
+        if (collision) {
+            // Rückgängig machen: inverse Rotation anwenden
+            obj.rotate(-rot.x, -rot.y, -rot.z)
         }
     }
 
     fun onKey(key: Int, scancode: Int, action: Int, mode: Int) {
         if (key == GLFW_KEY_TAB && action == GLFW_PRESS) {
             when (chooseObj) {
-                1 -> { cubeMoveMode = !cubeMoveMode; println("Cube: ${if (cubeMoveMode) "Bewegen" else "Rotieren"}") }
-                2 -> { coneMoveMode = !coneMoveMode; println("Cone: ${if (coneMoveMode) "Bewegen" else "Rotieren"}") }
+                1 -> { obj1MoveMode = !obj1MoveMode; println("Cube: ${if (obj1MoveMode) "Bewegen" else "Rotieren"}") }
+                2 -> { obj2MoveMode = !obj2MoveMode; println("Cone: ${if (obj2MoveMode) "Bewegen" else "Rotieren"}") }
+                3 -> { obj2MoveMode = !obj3MoveMode; println("Cone: ${if (obj3MoveMode) "Bewegen" else "Rotieren"}") }
             }
         }
+
+        if( key == GLFW_KEY_1 && action == GLFW_PRESS) {                                    // beim drücken von 1 bekommt chooseObj den Wert 1
+            chooseObj = 1
+            println("Objekt $chooseObj ausgewählt")
+        } else if (key == GLFW_KEY_2 && action == GLFW_PRESS) {                             // beim drücken von 2 bekommt chooseObj den Wert 2
+            chooseObj = 2
+            println("Objekt $chooseObj ausgewählt")
+        } else if (key == GLFW_KEY_3 && action == GLFW_PRESS) {                             // beim drücken von 3 bekommt chooseObj den Wert 3
+            chooseObj = 3
+        }
+
         if (key == GLFW_KEY_C && action == GLFW_PRESS) {
             activeCam = 1 - activeCam
             println("Aktive Kamera: ${if (activeCam == 0) "Cam 1 (Yaw, kein Pitch)" else "Cam 2 (Pitch, kein Yaw)"}")
