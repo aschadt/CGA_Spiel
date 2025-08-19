@@ -135,7 +135,7 @@ class Scene(private val window: GameWindow) {
     // --- Sofort-Schwarz per Taste (NEU) ---
     private var forceBlackout = false
     private var forceBlackoutTimer = 0f
-    private val forceBlackoutHold = 1.0f   // 10 Sekunden warten, dann beenden
+    private val forceBlackoutHold = 1.0f   //  1 Sekunden warten, dann beenden
 
     init {
         // Texturen laden
