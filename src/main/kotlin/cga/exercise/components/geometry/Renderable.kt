@@ -22,14 +22,14 @@ class Renderable(
    //   Rendert nur die Geometrie für den Shadow-Depth-Pass.
    //   Material wird hier NICHT gebunden, da nur Tiefenwerte gebraucht werden.
 
-    fun renderDepth(shaderProgram: ShaderProgram) {
-        // Model-Matrix setzen (wichtig für korrekte Transformation in Light Space)
-        shaderProgram.setUniform("model_matrix", getWorldModelMatrix())
+    fun renderDepth(depthShader: ShaderProgram) {
+        // Für den Depth-Pass kein Material binden – nur Model-Matrix setzen
+        val model = getWorldModelMatrix()
+        depthShader.setUniform("model", model, false)
+        depthShader.setUniform("model_matrix", model, false)
 
-
-        // Meshes ohne Material rendern
         for (mesh in meshes) {
-            mesh.render() // ohne shaderProgram, bindet nicht das Material
+            mesh.render() // reiner DrawCall, nutzt das aktuell gebundene Depth-Shader-Programm
         }
     }
 

@@ -48,19 +48,10 @@ open class Transformable(private var modelMatrix: Matrix4f = Matrix4f(), var par
     // Rotation um einen beliebigen Punkt im Raum (nicht unbedingt das Objektzentrum).
     // Dazu wird das Objekt erst zum Ursprung verschoben, rotiert, dann zurückverschoben.
     fun rotateAroundPoint(pitch: Float, yaw: Float, roll: Float, altMidpoint: Vector3f) {
-//        val translationToOrigin = Matrix4f().translate(altMidpoint.negate())
-        val rotation = Matrix4f()
-        rotation.rotateX(pitch)
-        rotation.rotateY(yaw)
-        rotation.rotateZ(roll)
-//        val translationBack = Matrix4f().translate(altMidpoint)
-        // Reihenfolge: erst verschieben, dann rotieren, dann zurückverschieben (Matrixmultiplikation von rechts nach links)
-//        modelMatrix = Matrix4f().mutranslationBack.mul(rotation).mul(translationToOrigin).nul(modelMatrix)
-        modelMatrix = Matrix4f()
-            .mul(Matrix4f().translate(altMidpoint))
-            .mul(rotation)
-            .mul(Matrix4f().translate(altMidpoint.negate()))
-            .mul(modelMatrix)
+        val rotation = Matrix4f().rotateX(pitch).rotateY(yaw).rotateZ(roll)
+        val toMid    = Matrix4f().translate(altMidpoint)
+        val fromMid  = Matrix4f().translate(Vector3f(altMidpoint).negate()) // <— Kopie statt mutate
+        modelMatrix = Matrix4f().mul(toMid).mul(rotation).mul(fromMid).mul(modelMatrix)
     }
 
     /**
