@@ -127,9 +127,14 @@ class Scene(private val window: GameWindow) {
     // --- Zeitbasiertes Abdunkeln & Auto-Beenden (NEU) ---
     private val fadeOverlay = FadeOverlay()
     private val totalTimeToBlack = 300.0f      // 5 Minuten
-    private val finalFadeDuration = 3.0f       // letzte 3s linear abdunkeln
+    private val finalFadeDuration = 120.0f       // letzte 3s linear abdunkeln
     private var nowT = 0f
     private var quitIssued = false
+
+    // --- Sofort-Schwarz per Taste (NEU) ---
+    private var forceBlackout = false
+    private var forceBlackoutTimer = 0f
+    private val forceBlackoutHold = 1.0f   // 10 Sekunden warten, dann beenden
 
     init {
         // Texturen laden
@@ -480,14 +485,26 @@ class Scene(private val window: GameWindow) {
         groundRenderable.render(staticShader)
         motorrad?.render(staticShader)
 
-        // --- NEU: zeitbasiertes Abdunkeln als Overlay ---
-        fadeOverlay.draw(fadeAlpha())
+        // --- NEU: zeitbasiertes Abdunkeln als Overlay und auf Knopfdruck---
+        // vorher: fadeOverlay.render(fadeAlpha())
+        val alpha = if (forceBlackout) 1f else fadeAlpha()
+        fadeOverlay.draw(alpha)
     }
 
     // --- Update ---
     fun update(dt: Float, t: Float) {
         // --- NEU: Zeit fortschreiben & ggf. beenden ---
         nowT = t
+
+        // Sofort-Schwarz aktiv? kurze Haltezeit, dann beenden
+        if (forceBlackout) {
+            forceBlackoutTimer += dt
+            if (forceBlackoutTimer >= forceBlackoutHold) {
+                requestClose()
+                return
+            }
+        }
+
         if (nowT >= totalTimeToBlack) {
             requestClose()
             return
@@ -632,6 +649,12 @@ class Scene(private val window: GameWindow) {
         // Zielwechsel
         if (key == GLFW_KEY_T && action == GLFW_PRESS) cycleCameraTarget(true)
         if (key == GLFW_KEY_R && action == GLFW_PRESS) cycleCameraTarget(false)
+
+        if (key == GLFW_KEY_B && action == GLFW_PRESS) {
+            forceBlackout = true
+            forceBlackoutTimer = 0f
+            println("SOFORT-SCHWARZ aktiviert (Taste B).")
+        }
     }
 
     fun onMouseMove(xpos: Double, ypos: Double) {
