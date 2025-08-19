@@ -40,6 +40,7 @@ out vec4 fragColor;
 uniform sampler2D material_diffuse;
 uniform sampler2D material_specular;
 uniform sampler2D material_emissive;
+uniform sampler2D material_roughness;
 uniform float     material_shininess;
 
 // ShadowMap
@@ -94,9 +95,15 @@ void main()
     vec3 specularColor = invgamma(texture(material_specular, vertexData.texCoords).rgb);
     vec3 emissiveColor = invgamma(texture(material_emissive, vertexData.texCoords).rgb) * emission_tint;
 
+    // Roughness
+    float rough = texture(material_roughness, vertexData.texCoords).r; // Grauwert [0..1]
+    float gloss = 1.0 - rough;                                        // Glossiness = 1 - Roughness
+    float shininessFactor = material_shininess * gloss * 128.0;       // Skaliert exponent
+
+
     // Beleuchtung
     float diff = max(dot(N, L), 0.0);
-    float spec = pow(max(dot(N, H), 0.0), material_shininess);
+    float spec = pow(max(dot(N, H), 0.0), shininessFactor);
 
     // Punktlichter
     vec3 pointDiffuse = vec3(0.0);
@@ -108,7 +115,7 @@ void main()
 
         vec3 H_i = normalize(L_i + V);
         float diff_i = max(dot(N, L_i), 0.0);
-        float spec_i = pow(max(dot(N, H_i), 0.0), material_shininess);
+        float spec_i = pow(max(dot(N, H_i), 0.0), shininessFactor);
 
         pointDiffuse  += att_i * diff_i * diffuseColor  * pointLight_colors[i];
         pointSpecular += att_i * spec_i * specularColor * pointLight_colors[i];
