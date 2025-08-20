@@ -89,6 +89,8 @@ class Scene(private val window: GameWindow) {
     private val fovMinRad = Math.toRadians(20.0).toFloat()
     private val fovMaxRad = Math.toRadians(100.0).toFloat()
     private val fovZoomSpeedRad = Math.toRadians(60.0).toFloat()
+    // Ortho-„Zoom“ (sichtbare Höhe) nur für Anchor-Kamera:
+    private val anchorOrthoZoomSpeed = 5.0f
 
     private var activeCam = 0 // 0 = cam1, 1 = cam2
 
@@ -183,7 +185,7 @@ class Scene(private val window: GameWindow) {
         specular.setTexParams(wrap, wrap, filter, mipmap)
         emissive.setTexParams(wrap, wrap, filter, mipmap)
 
-        // Materiale (deine Material-Klasse muss die optionalen Felder ggf. unterstützen)
+        // Materiale
         val oldGroundMaterial = Material(
             diff = diffuse,
             emit = emissive,
@@ -293,11 +295,10 @@ class Scene(private val window: GameWindow) {
         )
         val anchorMesh = Mesh(anchorMeshList[0].vertexData, anchorMeshList[0].indexData, anchorAttribs, oldGroundMaterial)
         followAnchor = Renderable(mutableListOf(anchorMesh)).apply {
-            // Starte irgendwo Sinnvolles
             translate(Vector3f(0f, 1.0f, 0f))
             scale(Vector3f(0.8f))
         }
-        // WICHTIG: followAnchor NICHT rendern (wir rufen später kein renderDepth/render dafür auf)
+        // followAnchor NICHT rendern
 
         // Lichter folgen dem Anchor
         pointLight.parent = followAnchor
@@ -311,7 +312,7 @@ class Scene(private val window: GameWindow) {
         ).also { it.parent = followAnchor }
 
         testSpot = SpotLight(
-            position = Vector3f(0f, 3f, 0f), // vor dem Cone
+            position = Vector3f(0f, 3f, 0f),
             color = Vector3f(1f, 1f, 1f),
             innerAngle = Math.toRadians(18.0).toFloat(),
             outerAngle = Math.toRadians(24.0).toFloat()
@@ -340,7 +341,7 @@ class Scene(private val window: GameWindow) {
         obj1Renderable?.let { camTargets += it }
         obj2Renderable?.let { camTargets += it }
         obj3Renderable?.let { camTargets += it }
-        followAnchor?.let   { camTargets += it }   // <— Anchor ist ein Target
+        followAnchor?.let   { camTargets += it }   // Anchor ist ein Target
         if (camTargets.isNotEmpty()) setCameraTarget(camTargets[0], snap = true)
 
         // OpenGL State
@@ -382,7 +383,7 @@ class Scene(private val window: GameWindow) {
         spotLight?.parent = target
         pointLight.parent = target
 
-        // Falls Anchor: Offsets einmal clampen (Sicherheit)
+        // Falls Anchor: Offsets clampen
         if (followAnchor != null && target === followAnchor) {
             cam1YOffsetAnchor = clampAnchorOffset(cam1YOffsetAnchor)
             cam2YOffsetAnchor = clampAnchorOffset(cam2YOffsetAnchor)
@@ -465,7 +466,7 @@ class Scene(private val window: GameWindow) {
             obj1Renderable?.renderDepth(ds)
             obj2Renderable?.renderDepth(ds)
             roomRenderable.renderDepth(ds)
-            // WICHTIG: followAnchor NICHT in die Shadow-Map rendern (unsichtbar)
+            // followAnchor NICHT in die Shadow-Map rendern (unsichtbar)
             shadow1.endDepthPass()
         }
 
@@ -575,7 +576,6 @@ class Scene(private val window: GameWindow) {
         }
 
         val rig = getActiveRig()
-        val cam = getActiveCamera()
 
         // Yaw (J/L): nur Cam1
         if (activeCam == 0) {
@@ -601,16 +601,39 @@ class Scene(private val window: GameWindow) {
             }
         }
 
-        // FOV-Zoom (U/O)
-        var fovDelta = 0f
-        if (window.getKeyState(GLFW_KEY_U)) fovDelta += -fovZoomSpeedRad * dt
-        if (window.getKeyState(GLFW_KEY_O)) fovDelta +=  +fovZoomSpeedRad * dt
-        if (fovDelta != 0f) cam.fovRad = (cam.fovRad + fovDelta).coerceIn(fovMinRad, fovMaxRad)
+        // --- Zoom-Handling ---
+        // - Anchor-Kamera (cam1): je nach Projektion FOV (Persp) oder Ortho-Höhe (Ortho)
+        // - cam2: immer FOV
+        if (activeCam == 0) {
+            val zoomIn = window.getKeyState(GLFW_KEY_U)
+            val zoomOut = window.getKeyState(GLFW_KEY_O)
+            if (cam1.projectionMode == TronCamera.ProjectionMode.Perspective) {
+                var fovDelta = 0f
+                if (zoomIn)  fovDelta += -fovZoomSpeedRad * dt
+                if (zoomOut) fovDelta +=  +fovZoomSpeedRad * dt
+                if (fovDelta != 0f) {
+                    cam1.fovRad = (cam1.fovRad + fovDelta).coerceIn(fovMinRad, fovMaxRad)
+                }
+            } else {
+                var orthoDelta = 0f
+                if (zoomIn)  orthoDelta += -anchorOrthoZoomSpeed * dt
+                if (zoomOut) orthoDelta +=  +anchorOrthoZoomSpeed * dt
+                if (orthoDelta != 0f) {
+                    cam1.addOrthoHeight(orthoDelta) // in TronCamera geclamped
+                }
+            }
+        } else {
+            var fovDelta = 0f
+            if (window.getKeyState(GLFW_KEY_U)) fovDelta += -fovZoomSpeedRad * dt
+            if (window.getKeyState(GLFW_KEY_O)) fovDelta +=  +fovZoomSpeedRad * dt
+            if (fovDelta != 0f)
+                cam2.fovRad = (cam2.fovRad + fovDelta).coerceIn(fovMinRad, fovMaxRad)
+        }
 
-        // --- Kamerahöhe verstellen (PageUp/PageDown), nur wenn Ziel = Anchor ---
+        // --- Kamerahöhe verstellen (N/M), nur wenn Ziel = Anchor ---
         if (currentCamTarget != null && followAnchor != null && currentCamTarget === followAnchor) {
             var dh = 0f
-            if (window.getKeyState(GLFW_KEY_M))   dh += camHeightAdjustSpeed * dt
+            if (window.getKeyState(GLFW_KEY_M)) dh += camHeightAdjustSpeed * dt
             if (window.getKeyState(GLFW_KEY_N)) dh -= camHeightAdjustSpeed * dt
 
             if (dh != 0f) {
@@ -717,6 +740,12 @@ class Scene(private val window: GameWindow) {
             forceBlackout = true
             forceBlackoutTimer = 0f
             println("SOFORT-SCHWARZ aktiviert (Taste B).")
+        }
+
+        // *** NEU: Anchor-Kamera (cam1) Perspektive <-> Orthografisch ***
+        if (key == GLFW_KEY_P && action == GLFW_PRESS) {
+            cam1.toggleProjection()
+            println("Anchor-Kamera Projektion: ${cam1.projectionMode}")
         }
     }
 
