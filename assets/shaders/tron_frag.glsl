@@ -41,6 +41,7 @@ uniform sampler2D material_diffuse;
 uniform sampler2D material_specular;
 uniform sampler2D material_emissive;
 uniform sampler2D material_roughness;
+uniform sampler2D material_normal;
 uniform float     material_shininess;
 
 // ShadowMap
@@ -77,8 +78,12 @@ float ShadowCalculation(vec4 fragPosLightSpace, vec3 normal_view, vec3 lightDir_
 
 void main()
 {
+    // Normalmap im Tangent Space
+    vec3 normalMap = texture(material_normal, vertexData.texCoords).rgb;
+    normalMap = normalize(normalMap * 2.0 - 1.0); // [0,1] → [-1,1]
+
     // Normale Richtungsvektoren
-    vec3 N = normalize(vertexData.normal_view);
+    vec3 N = normalMap;
     vec3 L = normalize(vertexData.toLight_view);
     vec3 V = normalize(vertexData.toCamera_view);
     vec3 H = normalize(L + V);
@@ -99,6 +104,8 @@ void main()
     float rough = texture(material_roughness, vertexData.texCoords).r; // Grauwert [0..1]
     float gloss = 1.0 - rough;                                        // Glossiness = 1 - Roughness
     float shininessFactor = material_shininess * gloss * 128.0;       // Skaliert exponent
+
+
 
 
     // Beleuchtung

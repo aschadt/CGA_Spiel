@@ -8,6 +8,7 @@ class Material(var diff: Texture2D? = null,
                var emit: Texture2D? = null,
                var specular: Texture2D? = null,
                var roughness: Texture2D? = null,
+               var normal: Texture2D? = null,
                var shininess: Float = 50.0f,
                var tcMultiplier : Vector2f = Vector2f(1.0f)){
 
@@ -26,6 +27,9 @@ class Material(var diff: Texture2D? = null,
 
         roughness?.bind(3)
         shaderProgram.setUniform("material_roughness", 3)
+
+        normal?.bind(4)
+        shaderProgram.setUniform("material_normal", 4)
 
         // Material-Parameter
         shaderProgram.setUniform("material_shininess", shininess)
