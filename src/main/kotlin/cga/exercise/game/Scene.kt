@@ -724,7 +724,7 @@ class Scene(private val window: GameWindow) {
         if (firstMouseMove) { lastMouseX = xpos; firstMouseMove = false; return }
         val dx = xpos - lastMouseX
         lastMouseX = xpos
-        val sensitivity = 0.002f
+        val sensitivity = 0.0009f
         val dy = (-dx * sensitivity).toFloat()
         if (activeCam == 0) {
             rig1.rotate(0f, dy, 0f)
