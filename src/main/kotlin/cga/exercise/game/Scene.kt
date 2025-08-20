@@ -151,6 +151,10 @@ class Scene(private val window: GameWindow) {
         val roughGround = Texture2D("assets/textures/gray_rocks_rough_2k.jpg", true)
         val normalGround = Texture2D("assets/textures/gray_rocks_nor_gl_2k.jpg", true)
 
+        val diffuseBauer = Texture2D("assets/textures/plywood_diff_2k.jpg", true)
+        val roughBauer = Texture2D("assets/textures/plywood_rough_2k.jpg", true)
+        val normalBauer = Texture2D("assets/textures/plywood_nor_gl_2k.jpg", true)
+
         val emissiveBlack = Texture2D("assets/textures/schwarz.png", true)
 
         // Texturparameter setzen
@@ -189,6 +193,16 @@ class Scene(private val window: GameWindow) {
             tcMultiplier = Vector2f(16.0f, 16.0f)
         )
 
+        val bauerMaterial = Material(
+            diff = diffuseBauer,
+            emit = emissiveBlack,
+            specular = emissiveBlack,
+            roughness = roughBauer,
+            normal = normalBauer,
+            shininess = 60.0f,
+            tcMultiplier = Vector2f(2.0f, 2.0f)
+        )
+
         // Ground
         val groundObj = loadOBJ("assets/models/roomGround.obj")
         val groundMeshList = groundObj.objects[0].meshes
@@ -214,43 +228,43 @@ class Scene(private val window: GameWindow) {
         roomRenderable.translate(Vector3f(0.0f, 0.0f, 0.0f))
 
         // Obj 1 (Cube)
-        val cubeObj = loadOBJ("assets/models/cube.obj")
-        val cubeMeshList = cubeObj.objects[0].meshes
-        val cubeAttribs = arrayOf(
+        val obj1 = loadOBJ("assets/models/Bauer_T1.obj")
+        val obj1MeshList = obj1.objects[0].meshes
+        val obj1Attribs = arrayOf(
             VertexAttribute(3, GL_FLOAT, 32, 0),
             VertexAttribute(2, GL_FLOAT, 32, 12),
             VertexAttribute(3, GL_FLOAT, 32, 20)
         )
-        val cubeMesh = Mesh(cubeMeshList[0].vertexData, cubeMeshList[0].indexData, cubeAttribs, wallMaterial)
-        obj1Renderable = Renderable(mutableListOf(cubeMesh)).apply {
+        val obj1Mesh = Mesh(obj1MeshList[0].vertexData, obj1MeshList[0].indexData, obj1Attribs, bauerMaterial)
+        obj1Renderable = Renderable(mutableListOf(obj1Mesh)).apply {
             translate(Vector3f(2.0f, 2.0f, -2.0f))
             scale(Vector3f(0.5f, 0.5f, 0.5f))
         }
 
         // Obj 2 (Cone)
-        val coneObj = loadOBJ("assets/models/cone.obj")
-        val coneMeshList = coneObj.objects[0].meshes
-        val coneAttribs = arrayOf(
+        val obj2 = loadOBJ("assets/models/Bauer_T2.obj")
+        val obj2MeshList = obj2.objects[0].meshes
+        val obj2Attribs = arrayOf(
             VertexAttribute(3, GL_FLOAT, 32, 0),
             VertexAttribute(2, GL_FLOAT, 32, 12),
             VertexAttribute(3, GL_FLOAT, 32, 20)
         )
-        val coneMesh = Mesh(coneMeshList[0].vertexData, coneMeshList[0].indexData, coneAttribs, oldGroundMaterial)
-        obj2Renderable = Renderable(mutableListOf(coneMesh)).apply {
+        val obj2Mesh = Mesh(obj2MeshList[0].vertexData, obj2MeshList[0].indexData, obj2Attribs, bauerMaterial)
+        obj2Renderable = Renderable(mutableListOf(obj2Mesh)).apply {
             translate(Vector3f(0.0f, 2.0f, -2.0f))
             scale(Vector3f(0.5f, 0.5f, 0.5f))
         }
 
         // Obj 3 (Zylinder)
-        val zylinderObj = loadOBJ("assets/models/zylinder.obj")
-        val zylinderMeshList = zylinderObj.objects[0].meshes
-        val zylinderAttribs = arrayOf(
+        val obj3 = loadOBJ("assets/models/Bauer_T3.obj")
+        val obj3MeshList = obj3.objects[0].meshes
+        val obj3Attribs = arrayOf(
             VertexAttribute(3, GL_FLOAT, 32, 0),
             VertexAttribute(2, GL_FLOAT, 32, 12),
             VertexAttribute(3, GL_FLOAT, 32, 20)
         )
-        val zylinderMesh = Mesh(zylinderMeshList[0].vertexData, zylinderMeshList[0].indexData, zylinderAttribs, groundMaterial)
-        obj3Renderable = Renderable(mutableListOf(zylinderMesh)).apply {
+        val obj3Mesh = Mesh(obj3MeshList[0].vertexData, obj3MeshList[0].indexData, obj3Attribs, bauerMaterial)
+        obj3Renderable = Renderable(mutableListOf(obj3Mesh)).apply {
             translate(Vector3f(-2.0f, 2.0f, -2.0f))
             scale(Vector3f(0.5f, 0.5f, 0.5f))
         }
