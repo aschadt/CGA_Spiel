@@ -144,10 +144,10 @@ class Scene(private val window: GameWindow) {
         val emissive = Texture2D("assets/textures/ground_emit.png", true)
 
         val diffuseWall = Texture2D("assets/textures/red_brick_diff_2k.jpg", true)
-        val specularWall = Texture2D("assets/textures/red_brick_rough_2k.jpg", true)
+        val roughWall = Texture2D("assets/textures/red_brick_rough_2k.jpg", true)
 
         val diffuseGround = Texture2D("assets/textures/gray_rocks_diff_2k.jpg", true)
-        val specularGround = Texture2D("assets/textures/gray_rocks_rough_2k.jpg", true)
+        val roughGround = Texture2D("assets/textures/gray_rocks_rough_2k.jpg", true)
 
         val emissiveBlack = Texture2D("assets/textures/schwarz.png", true)
 
@@ -171,14 +171,16 @@ class Scene(private val window: GameWindow) {
         val wallMaterial = Material(
             diff = diffuseWall,
             emit = emissiveBlack,
-            specular = specularWall,
+            specular = emissiveBlack,
+            roughness = roughWall,
             shininess = 60.0f,
             tcMultiplier = Vector2f(16.0f, 16.0f)
         )
         val groundMaterial = Material(
             diff = diffuseGround,
             emit = emissiveBlack,
-            specular = specularGround,
+            specular = emissiveBlack,
+            roughness = roughGround,
             shininess = 60.0f,
             tcMultiplier = Vector2f(16.0f, 16.0f)
         )
