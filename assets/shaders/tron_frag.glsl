@@ -107,7 +107,6 @@ void main()
 
 
 
-
     // Beleuchtung
     float diff = max(dot(N, L), 0.0);
     float spec = pow(max(dot(N, H), 0.0), shininessFactor);
