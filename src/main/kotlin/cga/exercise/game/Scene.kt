@@ -27,9 +27,7 @@ class Scene(private val window: GameWindow) {
 
     // --- Shadow Mapping (zwei Shadow-Maps: Test-Spot + Bike-Spot) ---
     private val shadow1 = ShadowRenderer(1024, 1024)
-    private val shadow2 = ShadowRenderer(1024, 1024)
     private val shadowUnit1 = 7
-    private val shadowUnit2 = 8 // wird aktuell nicht im Shader genutzt, nur Depth-Pass zum Testen
 
     // --- Renderables ---
     private var groundRenderable: Renderable
@@ -47,9 +45,7 @@ class Scene(private val window: GameWindow) {
 
     // --- Lichter ---
     private val pointLight = PointLight(Vector3f(0f, 1f, 0f), Vector3f(1f, 1f, 1f))
-    private var spotLight: SpotLight? = null
-    private var testSpot: SpotLight? = null      // vor dem Cone
-    private var bikeSpot: SpotLight? = null      // neben dem Motorrad
+    private var bikeSpot: SpotLight? = null
 
     private val pointLights = listOf(
         pointLight,
@@ -281,20 +277,6 @@ class Scene(private val window: GameWindow) {
         pointLight.parent = motorrad
         pointLight.translate(Vector3f(0f, 1.5f, 0f))
 
-        spotLight = SpotLight(
-            position = Vector3f(0f, 1.5f, 0f),
-            color = Vector3f(1f, 1f, 1f),
-            innerAngle = Math.toRadians(20.0).toFloat(),
-            outerAngle = Math.toRadians(25.0).toFloat()
-        ).also { it.parent = motorrad }
-
-        testSpot = SpotLight(
-            position = Vector3f(0f, 3f, 0f), // vor dem Cone
-            color = Vector3f(1f, 1f, 1f),
-            innerAngle = Math.toRadians(18.0).toFloat(),
-            outerAngle = Math.toRadians(24.0).toFloat()
-        )
-
         bikeSpot = SpotLight(
             position = Vector3f(0.8f, 3.0f, 0.0f),
             color = Vector3f(1f, 0.95f, 0.9f),
@@ -357,7 +339,6 @@ class Scene(private val window: GameWindow) {
 
         currentCamTarget = target
         followTarget = target          // nur merken, nicht parenten
-        spotLight?.parent = target
         pointLight.parent = target
 
         if (!snap) return
@@ -416,17 +397,10 @@ class Scene(private val window: GameWindow) {
         glGetIntegerv(GL_VIEWPORT, vp)
 
         // Light-space 1: Test-Spot -> zielt auf Cone
-        val ls1: Matrix4f? = testSpot?.let { sp ->
+        val ls1: Matrix4f? = bikeSpot?.let { sp ->
             val pos = sp.getWorldPosition()
             val target = obj2Renderable?.getWorldPosition() ?: Vector3f(0f, 2f, -2f)
             shadow1.buildLightSpacePerspective(pos, target, fovRad = Math.toRadians(60.0).toFloat(), near = 0.1f, far = 100f)
-        }
-
-        // Light-space 2: Bike-Spot -> zielt auf Fahrtrichtung des Motorrads
-        val ls2: Matrix4f? = bikeSpot?.let { sp ->
-            val pos = sp.getWorldPosition()
-            val target = motorrad?.getWorldPosition()?.add(0f, 0f, -2f) ?: Vector3f(0f, 0f, -2f)
-            shadow2.buildLightSpacePerspective(pos, target, fovRad = Math.toRadians(60.0).toFloat(), near = 0.1f, far = 100f)
         }
 
         // Depth-Pass 1
@@ -441,17 +415,6 @@ class Scene(private val window: GameWindow) {
             shadow1.endDepthPass()
         }
 
-        // Depth-Pass 2 (zweites Licht, nur Map-Erzeugung)
-        if (ls2 != null) {
-            shadow2.beginDepthPass(ls2)
-            val ds2 = shadow2.depthShader()
-            groundRenderable.renderDepth(ds2)
-            obj1Renderable?.renderDepth(ds2)
-            obj2Renderable?.renderDepth(ds2)
-            roomRenderable.renderDepth(ds2)
-            motorrad?.renderDepth(ds2)
-            shadow2.endDepthPass()
-        }
 
         glViewport(vp[0], vp[1], vp[2], vp[3])
 
@@ -475,7 +438,7 @@ class Scene(private val window: GameWindow) {
         pointLight.bind(staticShader)
 
         // Test-Spot als aktives Shadow-Licht
-        testSpot?.let { sp ->
+        bikeSpot?.let { sp ->
             staticShader.setUniform("spotLight_color", sp.color)
             sp.bind(staticShader, view)
             val conePos = obj2Renderable?.getWorldPosition() ?: Vector3f(0f, 2f, -2f)
