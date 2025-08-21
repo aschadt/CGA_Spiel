@@ -53,10 +53,10 @@ class Scene(private val window: GameWindow) {
 
     private val pointLights = listOf(
         pointLight,
-        PointLight(Vector3f(-20f, 1.5f, -20f), Vector3f(1f, 0f, 0f)),
-        PointLight(Vector3f( 20f, 1.5f, -20f), Vector3f(0f, 1f, 0f)),
-        PointLight(Vector3f( 20f, 1.5f,  20f), Vector3f(0f, 0f, 1f)),
-        PointLight(Vector3f(-20f, 1.5f,  20f), Vector3f(1f, 1f, 0f))
+        PointLight(Vector3f(-9f, 1.5f, -9f), Vector3f(1f, 1f, 1f)),
+        PointLight(Vector3f( 9f, 1.5f, -9f), Vector3f(1f, 1f, 1f)),
+        PointLight(Vector3f( 9f, 1.5f,  9f), Vector3f(1f, 1f, 1f)),
+        PointLight(Vector3f(-9f, 1.5f,  9f), Vector3f(1f, 1f, 1f))
     )
 
     // --- Orbit-Kameras + Rigs ---
@@ -181,7 +181,7 @@ class Scene(private val window: GameWindow) {
             roughness = roughWall,
             normal = normalWall,
             shininess = 60.0f,
-            tcMultiplier = Vector2f(16.0f, 16.0f)
+            tcMultiplier = Vector2f(8.0f, 8.0f)
         )
         val groundMaterial = Material(
             diff = diffuseGround,
@@ -215,7 +215,7 @@ class Scene(private val window: GameWindow) {
         groundRenderable = Renderable(mutableListOf(groundMesh))
 
         // Room
-        val roomObj = loadOBJ("assets/models/roomWalls.obj")
+        val roomObj = loadOBJ("assets/models/roomWall_v2.obj")
         val roomMeshList = roomObj.objects[0].meshes
         val roomAttribs = arrayOf(
             VertexAttribute(3, GL_FLOAT, 32, 0),
