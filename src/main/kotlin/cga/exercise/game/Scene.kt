@@ -8,6 +8,8 @@ import cga.exercise.components.shader.ShaderProgram
 import cga.exercise.components.texture.Texture2D
 import cga.exercise.components.shadow.ShadowRenderer
 import cga.exercise.components.blackscreen.FadeOverlay          // NEU: Overlay import
+import cga.exercise.components.level.Level
+import cga.exercise.components.level.LevelLoader
 import cga.framework.GLError
 import cga.framework.GameWindow
 import cga.framework.ModelLoader
@@ -31,18 +33,17 @@ class Scene(private val window: GameWindow) {
     private val shadowUnit1 = 7
     private val shadowUnit2 = 8 // wird aktuell nicht im Shader genutzt, nur Depth-Pass zum Testen
 
+    private var currentLevel: Level? = null
+    private var levelIndex = 0
+
     // --- Renderables ---
-    private var groundRenderable: Renderable
-    private var roomRenderable: Renderable
-    private var obj1Renderable: Renderable? = null
-    private var obj2Renderable: Renderable? = null
-    private var obj3Renderable: Renderable? = null
+
     private var motorrad: Renderable? = null
 
     // --- Auswahl / Objektsteuerung ---
-    private var obj1MoveMode = true
-    private var obj2MoveMode = true
-    private var obj3MoveMode = true
+
+    private val objMoveModes = mutableMapOf<Renderable, Boolean>()
+
     private var chooseObj: Int = 0
 
     // --- Lichter ---
@@ -138,136 +139,8 @@ class Scene(private val window: GameWindow) {
     private val forceBlackoutHold = 1.0f   //  1 Sekunden warten, dann beenden
 
     init {
-        // Texturen laden
-        val diffuse = Texture2D("assets/textures/ground_diff.png", true)
-        val specular = Texture2D("assets/textures/ground_spec.png", true)
-        val emissive = Texture2D("assets/textures/ground_emit.png", true)
 
-        val diffuseWall = Texture2D("assets/textures/red_brick_diff_2k.jpg", true)
-        val roughWall = Texture2D("assets/textures/red_brick_rough_2k.jpg", true)
-        val normalWall = Texture2D("assets/textures/red_brick_nor_gl_2k.jpg", true)
-
-        val diffuseGround = Texture2D("assets/textures/gray_rocks_diff_2k.jpg", true)
-        val roughGround = Texture2D("assets/textures/gray_rocks_rough_2k.jpg", true)
-        val normalGround = Texture2D("assets/textures/gray_rocks_nor_gl_2k.jpg", true)
-
-        val diffuseBauer = Texture2D("assets/textures/plywood_diff_2k.jpg", true)
-        val roughBauer = Texture2D("assets/textures/plywood_rough_2k.jpg", true)
-        val normalBauer = Texture2D("assets/textures/plywood_nor_gl_2k.jpg", true)
-
-        val emissiveBlack = Texture2D("assets/textures/schwarz.png", true)
-
-        // Texturparameter setzen
-        val wrap = GL_REPEAT
-        val filter = GL_LINEAR_MIPMAP_LINEAR
-        val mipmap = GL_LINEAR
-
-        diffuse.setTexParams(wrap, wrap, filter, mipmap)
-        specular.setTexParams(wrap, wrap, filter, mipmap)
-        emissive.setTexParams(wrap, wrap, filter, mipmap)
-
-        // Material erzeugen
-        val oldGroundMaterial = Material(
-            diff = diffuse,
-            emit = emissive,
-            specular = specular,
-            shininess = 60.0f,
-            tcMultiplier = Vector2f(64.0f, 64.0f)
-        )
-        val wallMaterial = Material(
-            diff = diffuseWall,
-            emit = emissiveBlack,
-            specular = emissiveBlack,
-            roughness = roughWall,
-            normal = normalWall,
-            shininess = 60.0f,
-            tcMultiplier = Vector2f(8.0f, 8.0f)
-        )
-        val groundMaterial = Material(
-            diff = diffuseGround,
-            emit = emissiveBlack,
-            specular = emissiveBlack,
-            roughness = roughGround,
-            normal = normalGround,
-            shininess = 60.0f,
-            tcMultiplier = Vector2f(16.0f, 16.0f)
-        )
-
-        val bauerMaterial = Material(
-            diff = diffuseBauer,
-            emit = emissiveBlack,
-            specular = emissiveBlack,
-            roughness = roughBauer,
-            normal = normalBauer,
-            shininess = 60.0f,
-            tcMultiplier = Vector2f(2.0f, 2.0f)
-        )
-
-        // Ground
-        val groundObj = loadOBJ("assets/models/roomGround.obj")
-        val groundMeshList = groundObj.objects[0].meshes
-        val groundAttribs = arrayOf(
-            VertexAttribute(3, GL_FLOAT, 32, 0),
-            VertexAttribute(2, GL_FLOAT, 32, 12),
-            VertexAttribute(3, GL_FLOAT, 32, 20)
-        )
-        val groundMesh = Mesh(groundMeshList[0].vertexData, groundMeshList[0].indexData, groundAttribs, groundMaterial)
-        groundRenderable = Renderable(mutableListOf(groundMesh))
-
-        // Room
-        val roomObj = loadOBJ("assets/models/roomWall_v2.obj")
-        val roomMeshList = roomObj.objects[0].meshes
-        val roomAttribs = arrayOf(
-            VertexAttribute(3, GL_FLOAT, 32, 0),
-            VertexAttribute(2, GL_FLOAT, 32, 12),
-            VertexAttribute(3, GL_FLOAT, 32, 20)
-        )
-        val roomMesh = Mesh(roomMeshList[0].vertexData, roomMeshList[0].indexData, roomAttribs, wallMaterial)
-        roomRenderable = Renderable(mutableListOf(roomMesh))
-        roomRenderable.rotate(0f, Math.toRadians(-90.0).toFloat(), 0f)
-        roomRenderable.translate(Vector3f(0.0f, 0.0f, 0.0f))
-
-        // Obj 1 (Cube)
-        val obj1 = loadOBJ("assets/models/Bauer_T1.obj")
-        val obj1MeshList = obj1.objects[0].meshes
-        val obj1Attribs = arrayOf(
-            VertexAttribute(3, GL_FLOAT, 32, 0),
-            VertexAttribute(2, GL_FLOAT, 32, 12),
-            VertexAttribute(3, GL_FLOAT, 32, 20)
-        )
-        val obj1Mesh = Mesh(obj1MeshList[0].vertexData, obj1MeshList[0].indexData, obj1Attribs, bauerMaterial)
-        obj1Renderable = Renderable(mutableListOf(obj1Mesh)).apply {
-            translate(Vector3f(2.0f, 2.0f, -2.0f))
-            scale(Vector3f(0.5f, 0.5f, 0.5f))
-        }
-
-        // Obj 2 (Cone)
-        val obj2 = loadOBJ("assets/models/Bauer_T2.obj")
-        val obj2MeshList = obj2.objects[0].meshes
-        val obj2Attribs = arrayOf(
-            VertexAttribute(3, GL_FLOAT, 32, 0),
-            VertexAttribute(2, GL_FLOAT, 32, 12),
-            VertexAttribute(3, GL_FLOAT, 32, 20)
-        )
-        val obj2Mesh = Mesh(obj2MeshList[0].vertexData, obj2MeshList[0].indexData, obj2Attribs, bauerMaterial)
-        obj2Renderable = Renderable(mutableListOf(obj2Mesh)).apply {
-            translate(Vector3f(0.0f, 2.0f, -2.0f))
-            scale(Vector3f(0.5f, 0.5f, 0.5f))
-        }
-
-        // Obj 3 (Zylinder)
-        val obj3 = loadOBJ("assets/models/Bauer_T3.obj")
-        val obj3MeshList = obj3.objects[0].meshes
-        val obj3Attribs = arrayOf(
-            VertexAttribute(3, GL_FLOAT, 32, 0),
-            VertexAttribute(2, GL_FLOAT, 32, 12),
-            VertexAttribute(3, GL_FLOAT, 32, 20)
-        )
-        val obj3Mesh = Mesh(obj3MeshList[0].vertexData, obj3MeshList[0].indexData, obj3Attribs, bauerMaterial)
-        obj3Renderable = Renderable(mutableListOf(obj3Mesh)).apply {
-            translate(Vector3f(-2.0f, 2.0f, -2.0f))
-            scale(Vector3f(0.5f, 0.5f, 0.5f))
-        }
+        loadLevel(0)
 
         // Motorrad
         motorrad = ModelLoader.loadModel(
@@ -315,9 +188,7 @@ class Scene(private val window: GameWindow) {
 
         // Kamera-Ziele
         camTargets.clear()
-        obj1Renderable?.let { camTargets += it }
-        obj2Renderable?.let { camTargets += it }
-        obj3Renderable?.let { camTargets += it }
+        currentLevel?.objects?.forEach { camTargets += it }
         motorrad?.let     { camTargets += it }
         if (camTargets.isNotEmpty()) setCameraTarget(camTargets[0], snap = true)
 
@@ -412,13 +283,15 @@ class Scene(private val window: GameWindow) {
 
     // --- Render: 2-Pass ---
     fun render(dt: Float, t: Float) {
+        val level = currentLevel ?: return
+
         val vp = IntArray(4)
         glGetIntegerv(GL_VIEWPORT, vp)
 
         // Light-space 1: Test-Spot -> zielt auf Cone
         val ls1: Matrix4f? = testSpot?.let { sp ->
             val pos = sp.getWorldPosition()
-            val target = obj2Renderable?.getWorldPosition() ?: Vector3f(0f, 2f, -2f)
+            val target = currentLevel?.objects?.getOrNull(1)?.getWorldPosition() ?: Vector3f(0f, 2f, -2f)
             shadow1.buildLightSpacePerspective(pos, target, fovRad = Math.toRadians(60.0).toFloat(), near = 0.1f, far = 100f)
         }
 
@@ -433,10 +306,9 @@ class Scene(private val window: GameWindow) {
         if (ls1 != null) {
             shadow1.beginDepthPass(ls1)
             val ds = shadow1.depthShader()
-            groundRenderable.renderDepth(ds)
-            obj1Renderable?.renderDepth(ds)
-            obj2Renderable?.renderDepth(ds)
-            roomRenderable.renderDepth(ds)
+            level.ground.renderDepth(ds)
+            level.objects.forEach { it.renderDepth(ds) }
+            level.room.renderDepth(ds)
             motorrad?.renderDepth(ds)
             shadow1.endDepthPass()
         }
@@ -445,10 +317,9 @@ class Scene(private val window: GameWindow) {
         if (ls2 != null) {
             shadow2.beginDepthPass(ls2)
             val ds2 = shadow2.depthShader()
-            groundRenderable.renderDepth(ds2)
-            obj1Renderable?.renderDepth(ds2)
-            obj2Renderable?.renderDepth(ds2)
-            roomRenderable.renderDepth(ds2)
+            level.ground.renderDepth(ds2)
+            level.objects.forEach { it.renderDepth(ds2) }
+            level.room.renderDepth(ds2)
             motorrad?.renderDepth(ds2)
             shadow2.endDepthPass()
         }
@@ -478,7 +349,7 @@ class Scene(private val window: GameWindow) {
         testSpot?.let { sp ->
             staticShader.setUniform("spotLight_color", sp.color)
             sp.bind(staticShader, view)
-            val conePos = obj2Renderable?.getWorldPosition() ?: Vector3f(0f, 2f, -2f)
+            val conePos = currentLevel?.objects?.getOrNull(1)?.getWorldPosition() ?: Vector3f(0f, 2f, -2f)
             val dirWorld = Vector3f(conePos).sub(sp.getWorldPosition()).normalize()
             val dirView  = view.transformDirection(dirWorld, Vector3f()).normalize()
             staticShader.setUniform("spot_direction_view", dirView)
@@ -499,11 +370,11 @@ class Scene(private val window: GameWindow) {
         val b = (sin(t * 1.3 + 4.0) * 0.5 + 0.5).toFloat()
         staticShader.setUniform("emission_tint", Vector3f(r, g, b))
 
-        obj1Renderable?.render(staticShader)
-        obj2Renderable?.render(staticShader)
-        obj3Renderable?.render(staticShader)
-        roomRenderable.render(staticShader)
-        groundRenderable.render(staticShader)
+
+        level.ground.render(staticShader)
+        level.room.render(staticShader)
+        level.objects.forEach { it.render(staticShader) }
+
         motorrad?.render(staticShader)
 
         // --- NEU: zeitbasiertes Abdunkeln als Overlay und auf Knopfdruck---
@@ -586,13 +457,15 @@ class Scene(private val window: GameWindow) {
         if (fovDelta != 0f) cam.fovRad = (cam.fovRad + fovDelta).coerceIn(fovMinRad, fovMaxRad)
 
         // Objektsteuerung + einfache Kollisionsvermeidung
-        if (chooseObj == 1 && obj1Renderable != null) {
-            objectControl(dt, obj1MoveMode, obj1Renderable, listOfNotNull(obj2Renderable, obj3Renderable))
-        } else if (chooseObj == 2 && obj2Renderable != null) {
-            objectControl(dt, obj2MoveMode, obj2Renderable, listOfNotNull(obj1Renderable, obj3Renderable))
-        } else if (chooseObj == 3 && obj3Renderable != null) {
-            objectControl(dt, obj3MoveMode, obj3Renderable, listOfNotNull(obj1Renderable, obj2Renderable))
+        currentLevel?.let { lvl ->
+            if (lvl.objects.isNotEmpty() && chooseObj in lvl.objects.indices) {
+                val obj = lvl.objects[chooseObj]
+                val others = lvl.objects.filter { it != obj }
+                val moveMode = objMoveModes[obj] ?: true
+                objectControl(dt, moveMode, obj, others)
+            }
         }
+
     }
 
     private fun fadeAlpha(): Float {
@@ -647,19 +520,39 @@ class Scene(private val window: GameWindow) {
         }
     }
 
+    fun loadLevel(index: Int) {
+        currentLevel = when (index) {
+            0 -> LevelLoader.loadLevel1()
+            1 -> LevelLoader.loadLevel2()
+            else -> null
+        }
+        levelIndex = index
+    }
+
+    fun nextLevel() {
+        loadLevel(levelIndex + 1)
+    }
+
     fun onKey(key: Int, scancode: Int, action: Int, mode: Int) {
         if (key == GLFW_KEY_TAB && action == GLFW_PRESS) {
-            when (chooseObj) {
-                1 -> { obj1MoveMode = !obj1MoveMode; println("Cube: ${if (obj1MoveMode) "Bewegen" else "Rotieren"}") }
-                2 -> { obj2MoveMode = !obj2MoveMode; println("Cone: ${if (obj2MoveMode) "Bewegen" else "Rotieren"}") }
-                3 -> { obj3MoveMode = !obj3MoveMode; println("Zylinder: ${if (obj3MoveMode) "Bewegen" else "Rotieren"}") }
+            currentLevel?.let { lvl ->
+                if (chooseObj in lvl.objects.indices) {
+                    val obj = lvl.objects[chooseObj]
+                    val moveMode = objMoveModes[obj] ?: true
+                    objMoveModes[obj] = !moveMode
+                    println("Objekt ${chooseObj + 1}: ${if (objMoveModes[obj] == true) "Bewegen" else "Rotieren"}")
+                }
             }
         }
 
         // Objektwahl
-        if (key == GLFW_KEY_1 && action == GLFW_PRESS) { chooseObj = 1; println("Objekt 1 ausgewählt (Cube)") }
-        if (key == GLFW_KEY_2 && action == GLFW_PRESS) { chooseObj = 2; println("Objekt 2 ausgewählt (Cone)") }
-        if (key == GLFW_KEY_3 && action == GLFW_PRESS) { chooseObj = 3; println("Objekt 3 ausgewählt (Zylinder)") }
+        if (key == GLFW_KEY_1 && action == GLFW_PRESS) { chooseObj = 0; println("Objekt 1 ausgewählt") }
+        if (key == GLFW_KEY_2 && action == GLFW_PRESS) { chooseObj = 1; println("Objekt 2 ausgewählt") }
+        if (key == GLFW_KEY_3 && action == GLFW_PRESS) { chooseObj = 2; println("Objekt 3 ausgewählt") }
+
+        if (key == GLFW_KEY_4 && action == GLFW_PRESS) {loadLevel(1)}
+        if (key == GLFW_KEY_5 && action == GLFW_PRESS) {loadLevel(0)}
+
 
         // Kamerawechsel
         if (key == GLFW_KEY_C && action == GLFW_PRESS) {
