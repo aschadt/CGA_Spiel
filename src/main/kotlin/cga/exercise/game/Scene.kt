@@ -323,8 +323,8 @@ class Scene(private val window: GameWindow) {
         }
 
         // Levelwechsel
-        if (key == GLFW_KEY_4) { loadLevel(1); rebuildCameraTargets(); focusSelection(0, true); setControl(0) }
-        if (key == GLFW_KEY_5) { loadLevel(0); rebuildCameraTargets(); focusSelection(0, true); setControl(0) }
+        if (key == GLFW_KEY_5) { loadLevel(1); rebuildCameraTargets(); focusSelection(0, true); setControl(0) }
+        if (key == GLFW_KEY_4) { loadLevel(0); rebuildCameraTargets(); focusSelection(0, true); setControl(0) }
 
         // Kamera toggles
         if (key == GLFW_KEY_C) camera.toggleActiveCamera()
