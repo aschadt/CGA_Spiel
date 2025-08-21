@@ -7,110 +7,108 @@ import org.joml.Vector3f
 import org.lwjgl.glfw.GLFW.*
 import kotlin.math.abs
 
-/**
- * Kapselt die gesamte Kameralogik (zwei Orbit-Kameras mit Rigs, Targets, Zoom, Pitch/Yaw, Maussteuerung)
- * Clamping: Für beide Kameras wird NUR die Höhe (Y) zwischen Boden und Decke begrenzt.
- * Wände (X/Z) sind frei.
- */
 class CameraController {
 
-    // Öffentliche Kameras/Rigs
-    val cam1 = TronCamera()          // Anchor-Kamera (umschaltbar auf Ortho)
-    val cam2 = TronCamera()          // zweite Kamera (immer Perspektive)
-    val rig1 = Transformable()
-    val rig2 = Transformable()
+    // --- Zwei Cams + zwei Rigs in Arrays, damit weniger Duplikat-Code nötig ist ---
+    val cams = arrayOf(TronCamera(), TronCamera())
+    val rigs = arrayOf(Transformable(), Transformable())
 
-    // Aktiver Index: 0 = cam1/rig1, 1 = cam2/rig2
     var activeCam: Int = 0
         private set
-    val activeCamera: TronCamera get() = if (activeCam == 0) cam1 else cam2
-    private val activeRig: Transformable get() = if (activeCam == 0) rig1 else rig2
+    val activeCamera: TronCamera get() = cams[activeCam]
+    private val activeRig: Transformable get() = rigs[activeCam]
 
-    // Ziele / Zustand
+    // Targets (optional mit Free/Anchor vorne)
     private val camTargets = mutableListOf<Transformable>()
     private var camTargetIndex = 0
     var currentTarget: Transformable? = null
         private set
-    private var followTarget: Transformable? = null
+
+    // „Freie“ Kamera folgt diesem Anchor (z. B. Motorrad). N/M-Höhe nur dann erlaubt.
     private var followAnchor: Transformable? = null
 
-    // Orbit-Zustände pro Target separat für beide Cams
+    // Orbit-State pro Kamera und Target
     private data class OrbitState(var yaw: Float = 0f, var pitch: Float = 0f, var dist: Float = 6f)
-    private val cam1States = mutableMapOf<Transformable, OrbitState>()
-    private val cam2States = mutableMapOf<Transformable, OrbitState>()
+    private val states = arrayOf(mutableMapOf<Transformable, OrbitState>(),
+        mutableMapOf<Transformable, OrbitState>())
 
-    // Orbit-Parameter
-    private var yaw1 = 0f
-    private var pitch1 = 0f
-    private var dist1 = 6.0f
-
-    private var yaw2 = 0f
-    private var pitch2 = -0.35f
-    private var dist2 = 2.6f
+    // Aktuelle Orbit-Werte je Kamera
+    private val yaw   = floatArrayOf(0f, 0f)
+    private val pitch = floatArrayOf(0f, -0.35f)
+    private val dist  = floatArrayOf(6.0f, 4.0f)
 
     // Geschwindigkeiten / Grenzen
     private val yawSpeed = 1.4f
     private val pitchSpeed = 1.0f
     private val pitchMin = -1.2f
     private val pitchMax =  1.2f
+
+    // Zoom
     private val fovMinRad = Math.toRadians(20.0).toFloat()
     private val fovMaxRad = Math.toRadians(100.0).toFloat()
     private val fovZoomSpeedRad = Math.toRadians(60.0).toFloat()
     private val anchorOrthoZoomSpeed = 5.0f
 
     // Kamera-Y-Offets
-    private val cam1YOffsetDefault = 1.0f
-    private val cam2YOffsetDefault = 0.0f
-
-    // Anchor-spezifische Offsets
-    private val cam1YOffsetAnchorStart = 4.0f
-    private val cam2YOffsetAnchorStart = 0.8f
-    private var cam1YOffsetAnchor = cam1YOffsetAnchorStart
-    private var cam2YOffsetAnchor = cam2YOffsetAnchorStart
+    private val camYOffsetDefault = floatArrayOf(1.0f, 0.0f)
+    private val camYOffsetAnchorStart = floatArrayOf(4.0f, 0.8f)
+    private val camYOffsetAnchor = camYOffsetAnchorStart.copyOf()
     private val camHeightAdjustSpeed = 1.5f
-    private val camHeightMinAnchor   = 0.2f
-    private val camHeightMaxAnchor   = 4.8f
-    private fun clampAnchorOffset(v: Float) = v.coerceIn(camHeightMinAnchor, camHeightMaxAnchor)
-    private fun cam1YOffsetFor(target: Transformable?) =
-        if (target != null && followAnchor != null && target === followAnchor) clampAnchorOffset(cam1YOffsetAnchor) else cam1YOffsetDefault
-    private fun cam2YOffsetFor(target: Transformable?) =
-        if (target != null && followAnchor != null && target === followAnchor) clampAnchorOffset(cam2YOffsetAnchor) else cam2YOffsetDefault
+    private val camHeightMinAnchor = 0.2f
+    private val camHeightMaxAnchor = 6.0f
 
     // Maus
     private var firstMouseMove = true
     private var lastMouseX = 0.0
+    private val MOUSE_SENSITIVITY = 0.002f
 
     init {
-        // Kameras in die Rigs hängen (Orbit-Setup)
-        cam1.parent = rig1
-        cam2.parent = rig2
+        // Parent setzen
+        cams[0].parent = rigs[0]
+        cams[1].parent = rigs[1]
 
-        cam1.translate(Vector3f(0f, cam1YOffsetDefault, dist1))
-        cam2.translate(Vector3f(0f, cam2YOffsetDefault, dist2))
+        // Start-Offsets & Distanzen
+        cams[0].translate(Vector3f(0f, camYOffsetDefault[0], dist[0]))
+        cams[1].translate(Vector3f(0f, camYOffsetDefault[1], dist[1]))
 
-        // (Original) rig2 initial 270° um X
-        rig2.rotate(Math.toRadians(270.0).toFloat(), 0f, 0f)
+        // gewünschter Anfangswinkel für rig2
+        rigs[1].rotate(Math.toRadians(290.0).toFloat(), 0f, 0f)
 
-        if (abs(pitch1) > 1e-6f) rig1.rotate(pitch1, 0f, 0f)
-        if (abs(pitch2) > 1e-6f) rig2.rotate(pitch2, 0f, 0f)
+        if (abs(pitch[0]) > 1e-6f) rigs[0].rotate(pitch[0], 0f, 0f)
+        if (abs(pitch[1]) > 1e-6f) rigs[1].rotate(pitch[1], 0f, 0f)
 
-        cam1.fovRad = Math.toRadians(90.0).toFloat()
-        cam2.fovRad = Math.toRadians(90.0).toFloat()
+        cams[0].fovRad = Math.toRadians(90.0).toFloat()
+        cams[1].fovRad = Math.toRadians(90.0).toFloat()
     }
 
     // --------------------- Public API ---------------------
 
+    /** Legt fest, welchem Objekt die „freie Kamera“ (F4) folgen soll (z. B. Motorrad). */
     fun setAnchor(anchor: Transformable?) {
         followAnchor = anchor
+        // Falls der Anchor bereits als Target drin sein soll: Liste aktualisieren (optional)
+        if (anchor != null && !camTargets.contains(anchor)) {
+            camTargets.add(0, anchor) // an Position 0 einfügen (Free vorne)
+            // Indexe korrigieren: wer gerade Anchor als Ziel hatte, bleibt korrekt;
+            // sonst verschiebt sich alles um +1. Unkritisch, da setTargets meist neu gesetzt wird.
+        }
     }
 
+    /**
+     * Targets neu setzen.
+     * Wenn followAnchor != null, steht er automatisch **an Index 0** in der Liste (freie Kamera).
+     * initialIndex bezieht sich auf die Objektliste (0..n-1). Intern +1 wegen Anchor vorne.
+     */
     fun setTargets(list: List<Transformable>, initialIndex: Int = 0, snap: Boolean = true) {
         camTargets.clear()
+        followAnchor?.let { camTargets += it } // Index 0 = freie Kamera, falls vorhanden
         camTargets.addAll(list)
-        if (camTargets.isNotEmpty()) {
-            camTargetIndex = initialIndex.coerceIn(0, camTargets.lastIndex)
-            setCameraTarget(camTargets[camTargetIndex], snap)
-        }
+
+        if (camTargets.isEmpty()) return
+
+        val shift = if (followAnchor != null) 1 else 0
+        camTargetIndex = (initialIndex + shift).coerceIn(0, camTargets.lastIndex)
+        setCameraTarget(camTargets[camTargetIndex], snap)
     }
 
     fun cycleTarget(forward: Boolean = true) {
@@ -120,137 +118,142 @@ class CameraController {
         else
             (camTargetIndex - 1 + camTargets.size) % camTargets.size
         setCameraTarget(camTargets[camTargetIndex], snap = true)
-        println("Kamera-Ziel: $camTargetIndex / ${camTargets.size}")
     }
 
     fun toggleActiveCamera() {
         activeCam = 1 - activeCam
-        println("Aktive Kamera: ${if (activeCam == 0) "Cam 1 (Anchor)" else "Cam 2"}")
+        println("Aktive Kamera: ${if (activeCam == 0) "Cam 1" else "Cam 2"}")
     }
 
     fun toggleProjectionCam1() {
-        cam1.toggleProjection()
-        println("Anchor-Kamera Projektion: ${cam1.projectionMode}")
+        cams[0].toggleProjection()
+        println("Cam1 Projektion: ${cams[0].projectionMode}")
+    }
+
+    /** Fokus auf ein konkretes Target. Fügt es hinzu, falls nicht in der Liste. */
+    fun focusOn(target: Transformable?, snap: Boolean = true) {
+        if (target == null) return
+        val idx = camTargets.indexOf(target).takeIf { it >= 0 } ?: run {
+            camTargets += target; camTargets.lastIndex
+        }
+        camTargetIndex = idx
+        setCameraTarget(target, snap)
+    }
+
+    /** Fokus „freie Kamera“ (folgt Anchor, wenn vorhanden). */
+    fun selectFree(snap: Boolean = true) {
+        followAnchor?.let { focusOn(it, snap) }
     }
 
     fun onMouseMove(xpos: Double, ypos: Double) {
+        val sensitivity = 0.002f
         if (firstMouseMove) { lastMouseX = xpos; firstMouseMove = false; return }
         val dx = xpos - lastMouseX
         lastMouseX = xpos
-        val sensitivity = 0.002f
-        val dy = (-dx * sensitivity).toFloat()
         if (activeCam == 0) {
-            rig1.rotate(0f, dy, 0f)
-            yaw1 += dy
+            val dy = (-dx * sensitivity).toFloat()
+            rigs[0].rotate(0f, dy, 0f)
+            yaw[0] = yaw[0] + dy
         }
     }
 
-    /**
-     * Pro-Frame Update: Yaw/Pitch, Zoom, Kamera-Höhe (M/N), Rigs zur Target-Position schieben.
-     * Die Scene ruft diese Methode einfach in ihrem update() auf.
-     */
+    /** Pro Frame: Follow, Yaw/Pitch, Zoom, N/M-Höhe. */
     fun update(dt: Float, window: GameWindow) {
-        // Rigs folgen nur der Zielposition translational (kein Parent)
-        followTarget?.let { tgt ->
-            moveRigToTargetPosition(rig1, tgt)
-            moveRigToTargetPosition(rig2, tgt)
+        // Rigs folgen der Zielposition (nur Translation)
+        currentTarget?.let { tgt ->
+            moveRigToTargetPosition(rigs[0], tgt)
+            moveRigToTargetPosition(rigs[1], tgt)
         }
 
-        // Yaw (J/L) für cam1
+        // Yaw Cam1 (J/L)
         if (activeCam == 0) {
-            val yawDir = axis(window, GLFW_KEY_J, GLFW_KEY_L)
-            if (yawDir != 0f) {
-                val dy = yawDir * yawSpeed * dt
-                rig1.rotate(0f, dy, 0f)
-                yaw1 += dy
+            val dir = axis(window, GLFW_KEY_J, GLFW_KEY_L)
+            if (dir != 0f) {
+                val dy = dir * yawSpeed * dt
+                rigs[0].rotate(0f, dy, 0f)
+                yaw[0] += dy
             }
         }
 
-        // Pitch (I/K) für cam2
+        // Pitch Cam2 (I/K)
         if (activeCam == 1) {
             val dp = (if (isDown(window, GLFW_KEY_I)) +pitchSpeed * dt else 0f) +
                     (if (isDown(window, GLFW_KEY_K)) -pitchSpeed * dt else 0f)
-            val newPitch = (getPitchRef() + dp).coerceIn(pitchMin, pitchMax)
-            val apply = newPitch - getPitchRef()
+            val newPitch = (pitch[1] + dp).coerceIn(pitchMin, pitchMax)
+            val apply = newPitch - pitch[1]
             if (abs(apply) > 1e-6f) {
-                rig2.rotate(apply, 0f, 0f)
-                setPitchRef(newPitch)
+                rigs[1].rotate(apply, 0f, 0f)
+                pitch[1] = newPitch
             }
         }
 
-        // Zoom (U/O): cam1 ggf. Orthografisch, sonst Perspektive
+        // Zoom (U/O)
         handleZoom(dt, window)
 
-        // Kamera-Höhe (M/N) nur wenn Target == Anchor
-        adjustActiveCamHeightIfAnchorTarget(dt, window)
+        // Nur wenn freies Ziel (Anchor) aktiv ist: Höhe mit N/M verstellbar
+        adjustCamHeightIfAnchorTarget(dt, window)
     }
 
-    /**
-     * Kameras pro Frame nur vertikal clampen (Boden/Decke).
-     */
+    /** Nur Y-Clamping (wird von außen mit Raumgrenzen aufgerufen) */
     fun clampCameras(roomMin: Vector3f, roomMax: Vector3f, margin: Float) {
-        clampTransformableY(cam1, roomMin.y, roomMax.y, margin)
-        clampTransformableY(cam2, roomMin.y, roomMax.y, margin)
+        clampY(cams[0], roomMin.y, roomMax.y, margin)
+        clampY(cams[1], roomMin.y, roomMax.y, margin)
     }
 
     // --------------------- Internals ---------------------
 
-    private fun setCameraTarget(target: Transformable, snap: Boolean = true) {
+    private fun setCameraTarget(target: Transformable, snap: Boolean) {
         val eps = 1e-6f
 
-        // alten State sichern
+        // alten Orbit-Status je Kamera sichern
         currentTarget?.let { prev ->
-            cam1States[prev] = OrbitState(yaw1, pitch1, dist1)
-            cam2States[prev] = OrbitState(yaw2, pitch2, dist2)
+            for (i in 0..1) states[i][prev] = OrbitState(yaw[i], pitch[i], dist[i])
         }
 
         currentTarget = target
-        followTarget = target
-
-        // Falls Anchor: Offsets clampen
-        if (followAnchor != null && target === followAnchor) {
-            cam1YOffsetAnchor = clampAnchorOffset(cam1YOffsetAnchor)
-            cam2YOffsetAnchor = clampAnchorOffset(cam2YOffsetAnchor)
-        }
 
         if (!snap) return
 
-        // Rigs zur Zielposition (nur Translation)
-        moveRigToTargetPosition(rig1, target)
-        moveRigToTargetPosition(rig2, target)
+        // Rigs zu Target schieben
+        for (i in 0..1) moveRigToTargetPosition(rigs[i], target)
 
-        // Zustand laden (oder Defaults)
-        val s1 = cam1States[target] ?: OrbitState(0f, 0f, dist1)
-        val s2 = cam2States[target] ?: OrbitState(0f, -0.35f, dist2)
+        // Gespeicherte Zustände laden oder Default
+        val s0 = states[0][target] ?: OrbitState(0f, 0f, dist[0])
+        val s1 = states[1][target] ?: OrbitState(0f, -0.35f, dist[1])
 
-        // Cam1: reset & anwenden
-        if (abs(yaw1)   > eps) rig1.rotate(0f, -yaw1, 0f)
-        if (abs(pitch1) > eps) rig1.rotate(-pitch1, 0f, 0f)
-        yaw1 = s1.yaw; pitch1 = s1.pitch
-        if (abs(pitch1) > eps) rig1.rotate(pitch1, 0f, 0f)
-        if (abs(yaw1)   > eps) rig1.rotate(0f, yaw1, 0f)
+        // Cam0 reset/apply
+        if (abs(yaw[0])   > eps) rigs[0].rotate(0f, -yaw[0], 0f)
+        if (abs(pitch[0]) > eps) rigs[0].rotate(-pitch[0], 0f, 0f)
+        yaw[0] = s0.yaw; pitch[0] = s0.pitch
+        if (abs(pitch[0]) > eps) rigs[0].rotate(pitch[0], 0f, 0f)
+        if (abs(yaw[0])   > eps) rigs[0].rotate(0f, yaw[0], 0f)
 
-        // Cam2: reset & anwenden
-        if (abs(yaw2)   > eps) rig2.rotate(0f, -yaw2, 0f)
-        if (abs(pitch2) > eps) rig2.rotate(-pitch2, 0f, 0f)
-        yaw2 = s2.yaw; pitch2 = s2.pitch
-        if (abs(pitch2) > eps) rig2.rotate(pitch2, 0f, 0f)
-        if (abs(yaw2)   > eps) rig2.rotate(0f, yaw2, 0f)
+        // Cam1 reset/apply
+        if (abs(yaw[1])   > eps) rigs[1].rotate(0f, -yaw[1], 0f)
+        if (abs(pitch[1]) > eps) rigs[1].rotate(-pitch[1], 0f, 0f)
+        yaw[1] = s1.yaw; pitch[1] = s1.pitch
+        if (abs(pitch[1]) > eps) rigs[1].rotate(pitch[1], 0f, 0f)
+        if (abs(yaw[1])   > eps) rigs[1].rotate(0f, yaw[1], 0f)
 
-        // Kamera-Offsets (Y+Dist) setzen
-        val p1 = cam1.getPosition()
-        dist1 = s1.dist
-        val y1 = cam1YOffsetFor(target)
-        val dY1 = y1    - p1.y
-        val dZ1 = dist1 - p1.z
-        if (abs(dY1) > eps || abs(dZ1) > eps) cam1.translate(Vector3f(0f, dY1, dZ1))
+        // Distanzen + Y-Offsets setzen
+        applyDistanceAndYOffset(0, target, s0.dist)
+        applyDistanceAndYOffset(1, target, s1.dist)
+    }
 
-        val p2 = cam2.getPosition()
-        dist2 = s2.dist
-        val y2 = cam2YOffsetFor(target)
-        val dY2 = y2    - p2.y
-        val dZ2 = dist2 - p2.z
-        if (abs(dY2) > eps || abs(dZ2) > eps) cam2.translate(Vector3f(0f, dY2, dZ2))
+    private fun applyDistanceAndYOffset(i: Int, target: Transformable, newDist: Float) {
+        dist[i] = newDist
+        val pos = cams[i].getPosition()
+        val wantY = yOffsetFor(i, target)
+        val dY = wantY - pos.y
+        val dZ = dist[i] - pos.z
+        if (abs(dY) > 1e-6f || abs(dZ) > 1e-6f) cams[i].translate(Vector3f(0f, dY, dZ))
+    }
+
+    private fun yOffsetFor(i: Int, target: Transformable?): Float {
+        val anchor = followAnchor
+        return if (anchor != null && target === anchor) {
+            camYOffsetAnchor[i].coerceIn(camHeightMinAnchor, camHeightMaxAnchor)
+        } else camYOffsetDefault[i]
     }
 
     private fun moveRigToTargetPosition(rig: Transformable, target: Transformable) {
@@ -268,58 +271,47 @@ class CameraController {
         return a
     }
 
-    private fun getPitchRef(): Float = if (activeCam == 0) pitch1 else pitch2
-    private fun setPitchRef(v: Float) { if (activeCam == 0) pitch1 = v else pitch2 = v }
-
     private fun handleZoom(dt: Float, window: GameWindow) {
         val zoomIn = isDown(window, GLFW_KEY_U)
         val zoomOut = isDown(window, GLFW_KEY_O)
-        if (activeCam == 0 && cam1.projectionMode == TronCamera.ProjectionMode.Orthographic) {
+        if (!zoomIn && !zoomOut) return
+
+        if (activeCam == 0 && cams[0].projectionMode == TronCamera.ProjectionMode.Orthographic) {
             var dh = 0f
-            if (zoomIn)  dh += -anchorOrthoZoomSpeed * dt
-            if (zoomOut) dh +=  +anchorOrthoZoomSpeed * dt
-            if (dh != 0f) cam1.addOrthoHeight(dh)
+            if (zoomIn)  dh -= anchorOrthoZoomSpeed * dt
+            if (zoomOut) dh += anchorOrthoZoomSpeed * dt
+            if (dh != 0f) cams[0].addOrthoHeight(dh)
         } else {
             var df = 0f
-            if (zoomIn)  df += -fovZoomSpeedRad * dt
-            if (zoomOut) df +=  +fovZoomSpeedRad * dt
+            if (zoomIn)  df -= fovZoomSpeedRad * dt
+            if (zoomOut) df += fovZoomSpeedRad * dt
             if (df != 0f) activeCamera.fovRad = (activeCamera.fovRad + df).coerceIn(fovMinRad, fovMaxRad)
         }
     }
 
-    private fun adjustActiveCamHeightIfAnchorTarget(dt: Float, window: GameWindow) {
-        if (currentTarget != followAnchor || followAnchor == null) return
+    private fun adjustCamHeightIfAnchorTarget(dt: Float, window: GameWindow) {
+        val anchor = followAnchor ?: return
+        if (currentTarget !== anchor) return
+
         var dh = 0f
         if (isDown(window, GLFW_KEY_M)) dh += camHeightAdjustSpeed * dt
         if (isDown(window, GLFW_KEY_N)) dh -= camHeightAdjustSpeed * dt
         if (dh == 0f) return
 
-        if (activeCam == 0) {
-            val newOffset = clampAnchorOffset(cam1YOffsetAnchor + dh)
-            val apply = newOffset - cam1YOffsetAnchor
-            if (abs(apply) > 1e-6f) {
-                cam1.translate(Vector3f(0f, apply, 0f))
-                cam1YOffsetAnchor = newOffset
-            }
-        } else {
-            val newOffset = clampAnchorOffset(cam2YOffsetAnchor + dh)
-            val apply = newOffset - cam2YOffsetAnchor
-            if (abs(apply) > 1e-6f) {
-                cam2.translate(Vector3f(0f, apply, 0f))
-                cam2YOffsetAnchor = newOffset
-            }
+        val i = activeCam
+        val newOffset = (camYOffsetAnchor[i] + dh).coerceIn(camHeightMinAnchor, camHeightMaxAnchor)
+        val apply = newOffset - camYOffsetAnchor[i]
+        if (abs(apply) > 1e-6f) {
+            cams[i].translate(Vector3f(0f, apply, 0f))
+            camYOffsetAnchor[i] = newOffset
         }
     }
 
-    // ---- Nur-Y-Clamping gegen Boden/Decke ----
-
-    /** Klemmt NUR die Höhe (Y) zwischen minY und maxY (mit Margin). X/Z bleiben unverändert. */
-    private fun clampTransformableY(t: Transformable, minY: Float, maxY: Float, margin: Float) {
+    /** Nur Y klemmen. */
+    private fun clampY(t: Transformable, minY: Float, maxY: Float, margin: Float) {
         val wp = t.getWorldPosition()
         val targetY = wp.y.coerceIn(minY + margin, maxY - margin)
         val dy = targetY - wp.y
-        if (kotlin.math.abs(dy) > 1e-5f) {
-            t.preTranslate(Vector3f(0f, dy, 0f))
-        }
+        if (abs(dy) > 1e-5f) t.preTranslate(Vector3f(0f, dy, 0f))
     }
 }

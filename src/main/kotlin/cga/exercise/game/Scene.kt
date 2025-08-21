@@ -31,7 +31,7 @@ class Scene(private val window: GameWindow) {
     private val shadow1 = ShadowRenderer(1024, 1024)
     private val shadow2 = ShadowRenderer(1024, 1024)
     private val shadowUnit1 = 7
-    private val shadowUnit2 = 8 // aktuell nicht im Shader genutzt
+    private val shadowUnit2 = 8
 
     // --- Level ---
     private var currentLevel: Level? = null
@@ -40,11 +40,12 @@ class Scene(private val window: GameWindow) {
     // --- Renderables ---
     private var leinwandRenderable: Renderable? = null
     private var motorrad: Renderable? = null
-    private var followAnchor: Renderable? = null
+    private var followAnchor: Renderable? = null   // Fallback-Anchor (Würfel)
 
-    // --- Auswahl / Objektsteuerung ---
+    // --- Auswahl-Stati ---
+    private var focusIndex: Int = 0
+    private var controlIndex: Int = 0
     private val objMoveModes = mutableMapOf<Renderable, Boolean>()
-    private var chooseObj: Int = 0
 
     // --- Lichter ---
     private val pointLight = PointLight(Vector3f(0f, 1f, 0f), Vector3f(1f, 1f, 1f))
@@ -59,25 +60,28 @@ class Scene(private val window: GameWindow) {
         PointLight(Vector3f(-9f, 1.5f,  9f), Vector3f(1f, 1f, 1f))
     )
 
-    // --- Kamera-Controller (separate Klasse) ---
+    // --- Kamera-Controller ---
     private val camera = CameraController()
 
-    // --- Raumgrenzen (nur für Y-Klemme der Kamera, XYZ für Objekte) ---
-    private val roomMin = Vector3f(-8.8f, 0.0f, -8.8f)
-    private val roomMax = Vector3f( 8.8f, 5.0f,  8.8f)
+    // --- Raumgrenzen ---
+    private val roomMin = Vector3f(-9.9f, 0.0f, -9.9f)
+    private val roomMax = Vector3f( 9.9f, 7.0f,  9.9f)
     private val wallMargin = 0.30f
 
     private companion object { private const val EPS_POS2 = 1e-10f }
 
     // --- Fade/Auto-Exit ---
     private val fadeOverlay = FadeOverlay()
-    private val totalTimeToBlack = 300.0f      // 5 Minuten
-    private val finalFadeDuration = 120.0f     // letzte 2 Minuten
+    private val totalTimeToBlack = 300.0f
+    private val finalFadeDuration = 120.0f
     private var nowT = 0f
     private var quitIssued = false
     private var forceBlackout = false
     private var forceBlackoutTimer = 0f
     private val forceBlackoutHold = 1.0f
+
+    /** Liefert das Anchor-Objekt für die freie Kamera (bevorzugt Motorrad). */
+    private fun anchorTarget(): Renderable? = motorrad ?: followAnchor
 
     init {
         // Level laden
@@ -114,7 +118,7 @@ class Scene(private val window: GameWindow) {
             rotate(Math.toRadians(90.0).toFloat(), 0f, 0f)
         }
 
-        // Unsichtbarer Follow-Anchor (ersetzt Motorrad)
+        // Fallback-Anchor (unsichtbarer Würfel), falls kein Motorrad existiert
         val anchorObj = loadOBJ("assets/models/cube.obj")
         val anchorMeshList = anchorObj.objects[0].meshes
         val anchorAttribs = arrayOf(
@@ -128,8 +132,11 @@ class Scene(private val window: GameWindow) {
             scale(Vector3f(0.8f))
         }
 
-        // Lichter am Anchor
-        pointLight.parent = followAnchor
+        // <<< WICHTIG >>> freie Kamera an Motorrad parenten (Fallback: Würfel)
+        camera.setAnchor(anchorTarget())
+
+        // Lichter am Anchor (Motorrad bevorzugt)
+        pointLight.parent = anchorTarget()
         pointLight.translate(Vector3f(0f, 1.5f, 0f))
 
         testSpot = SpotLight(
@@ -144,10 +151,9 @@ class Scene(private val window: GameWindow) {
             color = Vector3f(1f, 0.95f, 0.9f),
             innerAngle = Math.toRadians(18.0).toFloat(),
             outerAngle = Math.toRadians(26.0).toFloat()
-        ).also { it.parent = followAnchor }
+        ).also { it.parent = anchorTarget() }
 
-        // Kamera-Controller mit Anchor und Zielen versorgen
-        camera.setAnchor(followAnchor)
+        // Kamera-Targets (Level-Objekte) einmalig setzen
         rebuildCameraTargets()
 
         // OpenGL State
@@ -165,17 +171,17 @@ class Scene(private val window: GameWindow) {
         val vp = IntArray(4)
         glGetIntegerv(GL_VIEWPORT, vp)
 
-        // Light-space 1: Test-Spot (zielt z.B. auf 2. Objekt)
+        // Light-space 1
         val ls1: Matrix4f? = testSpot?.let { sp ->
             val pos = sp.getWorldPosition()
             val target = level.objects.getOrNull(1)?.getWorldPosition() ?: Vector3f(0f, 2f, -2f)
             shadow1.buildLightSpacePerspective(pos, target, fovRad = Math.toRadians(60.0).toFloat(), near = 0.1f, far = 100f)
         }
 
-        // Light-space 2: Anchor-Spot -> nach vorn vom Anchor
+        // Light-space 2
         val ls2: Matrix4f? = bikeSpot?.let { sp ->
             val pos = sp.getWorldPosition()
-            val targ = followAnchor?.getWorldPosition()?.add(0f, 0f, -2f) ?: Vector3f(0f, 0f, -2f)
+            val targ = anchorTarget()?.getWorldPosition()?.add(0f, 0f, -2f) ?: Vector3f(0f, 0f, -2f)
             shadow2.buildLightSpacePerspective(pos, targ, fovRad = Math.toRadians(60.0).toFloat(), near = 0.1f, far = 100f)
         }
 
@@ -236,13 +242,13 @@ class Scene(private val window: GameWindow) {
             sp.bind(staticShader, view)
         }
 
-        // Zeitabhängiger Emission-Tint
+        // Emission-Tint
         val r = (sin(t * 2.0) * 0.5 + 0.5).toFloat()
         val g = (sin(t * 0.7 + 2.0) * 0.5 + 0.5).toFloat()
         val b = (sin(t * 1.3 + 4.0) * 0.5 + 0.5).toFloat()
         staticShader.setUniform("emission_tint", Vector3f(r, g, b))
 
-        // Render Level & Extras
+        // Render
         level.ground.render(staticShader)
         level.room.render(staticShader)
         level.objects.forEach { it.render(staticShader) }
@@ -256,7 +262,6 @@ class Scene(private val window: GameWindow) {
 
     // --- Update ---
     fun update(dt: Float, t: Float) {
-        // Zeit/Beenden
         nowT = t
         if (forceBlackout) {
             forceBlackoutTimer += dt
@@ -264,19 +269,18 @@ class Scene(private val window: GameWindow) {
         }
         if (nowT >= totalTimeToBlack) { requestClose(); return }
 
-        // Kamera-Controller (Yaw/Pitch/Zoom/Höhe/Follow)
         camera.update(dt, window)
 
-        // Anchor mit WASD relativ zur aktiven Kamera bewegen (strafe)
+        // Anchor per WASD (bewegt Motorrad, falls vorhanden)
         moveAnchorWithWASD(dt)
 
-        // Kamera **nur vertikal** zwischen Boden/Decke klemmen
+        // Kamera nur vertikal klemmen
         clampCameraHeightsOnly()
 
-        // Objektsteuerung + Kollisionsvermeidung
+        // Objektsteuerung (unabhängig vom Fokus)
         currentLevel?.let { lvl ->
-            if (lvl.objects.isNotEmpty() && chooseObj in lvl.objects.indices) {
-                val obj = lvl.objects[chooseObj]
+            if (lvl.objects.isNotEmpty() && controlIndex in lvl.objects.indices) {
+                val obj = lvl.objects[controlIndex]
                 val others = lvl.objects.filter { it != obj }
                 val moveMode = objMoveModes[obj] ?: true
                 objectControl(dt, moveMode, obj, others)
@@ -286,34 +290,48 @@ class Scene(private val window: GameWindow) {
 
     // --- Input Hooks ---
     fun onKey(key: Int, scancode: Int, action: Int, mode: Int) {
-        // Toggle Move/Rotate für selektiertes Objekt
-        if (key == GLFW_KEY_TAB && action == GLFW_PRESS) {
+        if (action != GLFW_PRESS) return
+
+        // Kamera-FOKUS + STEUERUNG (1/2/3)
+        if (key == GLFW_KEY_1) { focusSelection(0, snap = true); setControl(0) }
+        if (key == GLFW_KEY_2) { focusSelection(1, snap = true); setControl(1) }
+        if (key == GLFW_KEY_3) { focusSelection(2, snap = true); setControl(2) }
+
+        // Nur KAMERA-FOKUS (F1–F4)
+        if (key == GLFW_KEY_F1) { focusSelection(0, snap = true) }
+        if (key == GLFW_KEY_F2) { focusSelection(1, snap = true) }
+        if (key == GLFW_KEY_F3) { focusSelection(2, snap = true) }
+        if (key == GLFW_KEY_F4) {
+            camera.selectFree(snap = true)
+            val what = if (motorrad != null) "Motorrad" else "Fallback-Anchor"
+            println("Kamera-Fokus: Freie Kamera (parented → $what)")
+        }
+
+        // Fokus zyklisch (R/T)
+        if (key == GLFW_KEY_T) cycleFocus(forward = true)
+        if (key == GLFW_KEY_R) cycleFocus(forward = false)
+
+        // Move/Rotate Toggle
+        if (key == GLFW_KEY_TAB) {
             currentLevel?.let { lvl ->
-                if (chooseObj in lvl.objects.indices) {
-                    val obj = lvl.objects[chooseObj]
+                if (controlIndex in lvl.objects.indices) {
+                    val obj = lvl.objects[controlIndex]
                     objMoveModes[obj] = !(objMoveModes[obj] ?: true)
-                    println("Objekt ${chooseObj + 1}: ${if (objMoveModes[obj] == true) "Bewegen" else "Rotieren"}")
+                    println("Objekt ${controlIndex + 1}: ${if (objMoveModes[obj] == true) "Bewegen" else "Rotieren"}")
                 }
             }
         }
 
-        // Objektwahl
-        if (key == GLFW_KEY_1 && action == GLFW_PRESS) { chooseObj = 0; println("Objekt 1 ausgewählt") }
-        if (key == GLFW_KEY_2 && action == GLFW_PRESS) { chooseObj = 1; println("Objekt 2 ausgewählt") }
-        if (key == GLFW_KEY_3 && action == GLFW_PRESS) { chooseObj = 2; println("Objekt 3 ausgewählt") }
+        // Levelwechsel
+        if (key == GLFW_KEY_4) { loadLevel(1); rebuildCameraTargets(); focusSelection(0, true); setControl(0) }
+        if (key == GLFW_KEY_5) { loadLevel(0); rebuildCameraTargets(); focusSelection(0, true); setControl(0) }
 
-        // Levelwechsel (Beispiel)
-        if (key == GLFW_KEY_4 && action == GLFW_PRESS) { loadLevel(1); rebuildCameraTargets() }
-        if (key == GLFW_KEY_5 && action == GLFW_PRESS) { loadLevel(0); rebuildCameraTargets() }
-
-        // Kamera/Targets -> an CameraController delegieren
-        if (key == GLFW_KEY_C && action == GLFW_PRESS) camera.toggleActiveCamera()
-        if (key == GLFW_KEY_T && action == GLFW_PRESS) camera.cycleTarget(true)
-        if (key == GLFW_KEY_R && action == GLFW_PRESS) camera.cycleTarget(false)
-        if (key == GLFW_KEY_P && action == GLFW_PRESS) camera.toggleProjectionCam1()
+        // Kamera toggles
+        if (key == GLFW_KEY_C) camera.toggleActiveCamera()
+        if (key == GLFW_KEY_P) camera.toggleProjectionCam1()
 
         // Sofort-Blackout
-        if (key == GLFW_KEY_B && action == GLFW_PRESS) {
+        if (key == GLFW_KEY_B) {
             forceBlackout = true
             forceBlackoutTimer = 0f
             println("SOFORT-SCHWARZ aktiviert (Taste B).")
@@ -330,18 +348,47 @@ class Scene(private val window: GameWindow) {
 
     // ------------------------- Helpers -------------------------
 
-    /** Nur Y (Boden/Decke) für beide Kameras klemmen. */
-    private fun clampCameraHeightsOnly() {
-        clampTransformableY(camera.cam1, roomMin.y, roomMax.y, wallMargin)
-        clampTransformableY(camera.cam2, roomMin.y, roomMax.y, wallMargin)
+    private fun buildTargetsList(): MutableList<Transformable> {
+        val targets = mutableListOf<Transformable>()
+        currentLevel?.objects?.forEach { targets += it }
+        return targets
     }
 
-    /** Anchor per WASD relativ zur aktiven Kamera bewegen (XZ, keine Rotation). */
+    private fun focusSelection(idx: Int, snap: Boolean = true) {
+        val lvl = currentLevel ?: return
+        if (idx !in lvl.objects.indices) return
+        focusIndex = idx
+        camera.setTargets(buildTargetsList(), initialIndex = idx, snap = snap)
+        println("Kamera-Fokus: Objekt ${idx + 1}")
+    }
+
+    private fun cycleFocus(forward: Boolean) {
+        val lvl = currentLevel ?: return
+        if (lvl.objects.isEmpty()) return
+        focusIndex = if (forward)
+            (focusIndex + 1) % lvl.objects.size
+        else
+            (focusIndex - 1 + lvl.objects.size) % lvl.objects.size
+        camera.setTargets(buildTargetsList(), initialIndex = focusIndex, snap = true)
+        println("Kamera-Fokus gewechselt → Objekt ${focusIndex + 1}")
+    }
+
+    private fun setControl(idx: Int) {
+        val lvl = currentLevel ?: return
+        if (idx !in lvl.objects.indices) return
+        controlIndex = idx
+        println("Steuerung: Objekt ${idx + 1}")
+    }
+
+    private fun clampCameraHeightsOnly() {
+        camera.clampCameras(roomMin, roomMax, wallMargin)
+    }
+
+    /** Bewegt das Anchor-Objekt (Motorrad bevorzugt) relativ zur aktiven Kamera. */
     private fun moveAnchorWithWASD(dt: Float) {
-        val anchor = followAnchor ?: return
+        val anchor = anchorTarget() ?: return
         val cam = camera.activeCamera
 
-        // Eingabeachsen
         var axF = 0f
         if (window.getKeyState(GLFW_KEY_W)) axF += 1f
         if (window.getKeyState(GLFW_KEY_S)) axF -= 1f
@@ -350,7 +397,6 @@ class Scene(private val window: GameWindow) {
         if (window.getKeyState(GLFW_KEY_A)) axR -= 1f
         if (axF == 0f && axR == 0f) return
 
-        // Weltbasis aus Kamera (auf XZ)
         val inv = Matrix4f(cam.getCalculateViewMatrix()).invert()
         val forward = inv.transformDirection(Vector3f(0f, 0f, -1f)).apply { y = 0f; if (lengthSquared() > 1e-8f) normalize() }
         val right   = inv.transformDirection(Vector3f(1f, 0f,  0f)).apply { y = 0f; if (lengthSquared() > 1e-8f) normalize() }
@@ -363,7 +409,6 @@ class Scene(private val window: GameWindow) {
         }
     }
 
-    /** XYZ-Klemme für beliebige Transformables (Objekte) im Raum. */
     private fun clampTransformableToRoom(t: Transformable, margin: Float = wallMargin) {
         val wp = t.getWorldPosition()
         val clamped = clampInsideRoom(Vector3f(wp), margin)
@@ -381,7 +426,6 @@ class Scene(private val window: GameWindow) {
         )
     }
 
-    /** Nur Y-Klemme (Boden/Decke) mit Margin. */
     private fun clampTransformableY(t: Transformable, minY: Float, maxY: Float, margin: Float) {
         val wp = t.getWorldPosition()
         val targetY = wp.y.coerceIn(minY + margin, maxY - margin)
@@ -389,7 +433,6 @@ class Scene(private val window: GameWindow) {
         if (abs(dy) > 1e-5f) t.preTranslate(Vector3f(0f, dy, 0f))
     }
 
-    // Objektsteuerung
     fun objectControl(dt: Float, moveMode: Boolean, renderable: Renderable?, allObjects: List<Renderable>) {
         val speed = Math.toRadians(90.0).toFloat()
         if (renderable == null) return
@@ -410,7 +453,7 @@ class Scene(private val window: GameWindow) {
     private fun tryMove(obj: Renderable, move: Vector3f, others: List<Renderable>) {
         val prev = obj.getWorldPosition()
         obj.translate(move)
-        clampTransformableToRoom(obj) // im Raum halten (XYZ für Objekte)
+        clampTransformableToRoom(obj)
 
         val currentBox = obj.getKollision()
         val collision = others.any { it != obj && currentBox.intersects(it.getKollision()) }
@@ -437,16 +480,10 @@ class Scene(private val window: GameWindow) {
         }
     }
 
-    // Camera targets nach Level-/Anchor-Änderung neu setzen
     private fun rebuildCameraTargets() {
-        val targets = mutableListOf<Transformable>()
-        currentLevel?.objects?.forEach { targets += it }
-        motorrad?.let { targets += it }
-        followAnchor?.let { targets += it } // Anchor als zusätzliches Kamera-Ziel
-        camera.setTargets(targets, initialIndex = 0, snap = true)
+        camera.setTargets(buildTargetsList(), initialIndex = focusIndex.coerceAtMost((currentLevel?.objects?.lastIndex ?: 0)), snap = true)
     }
 
-    // Level laden/wechseln
     fun loadLevel(index: Int) {
         currentLevel = when (index) {
             0 -> LevelLoader.loadLevel1()
@@ -454,6 +491,8 @@ class Scene(private val window: GameWindow) {
             else -> null
         }
         levelIndex = index
+        focusIndex = 0
+        controlIndex = 0
     }
 
     fun nextLevel() {
@@ -461,7 +500,6 @@ class Scene(private val window: GameWindow) {
         rebuildCameraTargets()
     }
 
-    // Fade/Exit
     private fun fadeAlpha(): Float {
         val fadeStart = totalTimeToBlack - finalFadeDuration
         val x = (nowT - fadeStart) / finalFadeDuration
@@ -475,7 +513,6 @@ class Scene(private val window: GameWindow) {
     }
 }
 
-/** Hilfsobjekt: holt ein Material von einem Renderable (erster Mesh). */
 private object MaterialProvider {
     fun grabFrom(r: Renderable): Material? {
         val f = Renderable::class.java.getDeclaredField("meshes")
