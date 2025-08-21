@@ -73,7 +73,7 @@ class Scene(private val window: GameWindow) {
 
     private var yaw2 = 0f
     private var pitch2 = -0.35f
-    private var dist2 = 6.0f
+    private var dist2 = 2.6f
 
     private val yawSpeed = 1.4f
     private val pitchSpeed = 1.0f
@@ -127,6 +127,158 @@ class Scene(private val window: GameWindow) {
     private var lastMouseX = 0.0
 
     private companion object { private const val EPS_POS2 = 1e-10f }
+
+    // --- Raum-Kollision (Innenraum-AABB) ---
+    private val roomMin = Vector3f(-8.8f, 0.0f, -8.8f)
+    private val roomMax = Vector3f( 8.8f, 5.0f,  8.8f)
+    private val wallMargin = 0.30f
+
+    private fun clampInsideRoom(p: Vector3f, margin: Float = wallMargin): Vector3f {
+        return Vector3f(
+            p.x.coerceIn(roomMin.x + margin, roomMax.x - margin),
+            p.y.coerceIn(roomMin.y + margin, roomMax.y - margin),
+            p.z.coerceIn(roomMin.z + margin, roomMax.z - margin)
+        )
+    }
+
+    /** Korrigiert die Weltposition eines Transformable in die Raum-AABB hinein. */
+    private fun clampTransformableToRoom(t: Transformable, margin: Float = wallMargin) {
+        val wp = t.getWorldPosition()
+        val clamped = clampInsideRoom(Vector3f(wp), margin)
+        if (!wp.equals(clamped, 1e-5f)) {
+            val corr = clamped.sub(wp)
+            t.preTranslate(corr)
+        }
+    }
+
+    // Prüft, ob es die freie Anchor-Kamera ist (cam1 + Target = followAnchor)
+    private fun isFreeAnchorCam(cam: TronCamera): Boolean {
+        return (cam === cam1) && (currentCamTarget != null) && (currentCamTarget === followAnchor)
+    }
+
+    // Klemmt Kameras nur, wenn es NICHT die freie Anchor-Kamera ist
+    private fun clampCameraIfNeeded(cam: TronCamera, margin: Float = wallMargin + 0.05f) {
+        if (isFreeAnchorCam(cam)) return
+        clampTransformableToRoom(cam, margin)
+    }
+
+    // ---------- Hilfsfunktionen (Eingaben/Bewegung/Zoom) ----------
+    private fun isDown(key: Int) = window.getKeyState(key)
+
+    private fun axis(plusKey: Int, minusKey: Int): Float {
+        var a = 0f
+        if (isDown(plusKey)) a += 1f
+        if (isDown(minusKey)) a -= 1f
+        return a
+    }
+
+    private data class CamBasis(val fwdXZ: Vector3f, val rightXZ: Vector3f)
+    private fun camBasisXZ(cam: TronCamera): CamBasis {
+        val inv = Matrix4f(cam.getCalculateViewMatrix()).invert()
+        val fwd   = inv.transformDirection(Vector3f(0f, 0f, -1f)).apply { y = 0f; if (lengthSquared() > 1e-8f) normalize() }
+        val right = inv.transformDirection(Vector3f(1f, 0f,  0f)).apply { y = 0f; if (lengthSquared() > 1e-8f) normalize() }
+        return CamBasis(fwd, right)
+    }
+
+    private fun moveTransformAlongCamXZ(
+        t: Transformable,
+        cam: TronCamera,
+        speed: Float,
+        dt: Float,
+        forwardAxis: Float,
+        rightAxis: Float
+    ) {
+        if (forwardAxis == 0f && rightAxis == 0f) return
+        val (fwd, right) = camBasisXZ(cam)
+        val dir = Vector3f()
+            .add(fwd.mul(forwardAxis, Vector3f()))
+            .add(right.mul(rightAxis, Vector3f()))
+        if (dir.lengthSquared() > 0f) {
+            dir.normalize().mul(speed * dt)
+            t.preTranslate(dir)
+        }
+    }
+
+    private fun handleZoomPerspective(cam: TronCamera, zoomIn: Boolean, zoomOut: Boolean, dt: Float) {
+        var df = 0f
+        if (zoomIn)  df += -fovZoomSpeedRad * dt
+        if (zoomOut) df +=  +fovZoomSpeedRad * dt
+        if (df != 0f) cam.fovRad = (cam.fovRad + df).coerceIn(fovMinRad, fovMaxRad)
+    }
+
+    private fun handleZoomOrtho(cam: TronCamera, zoomIn: Boolean, zoomOut: Boolean, dt: Float) {
+        var dh = 0f
+        if (zoomIn)  dh += -anchorOrthoZoomSpeed * dt
+        if (zoomOut) dh +=  +anchorOrthoZoomSpeed * dt
+        if (dh != 0f) cam.addOrthoHeight(dh)
+    }
+
+    private fun handleZoom(dt: Float) {
+        val zoomIn = isDown(GLFW_KEY_U)
+        val zoomOut = isDown(GLFW_KEY_O)
+        if (activeCam == 0 && cam1.projectionMode == TronCamera.ProjectionMode.Orthographic) {
+            handleZoomOrtho(cam1, zoomIn, zoomOut, dt)
+        } else {
+            handleZoomPerspective(getActiveCamera(), zoomIn, zoomOut, dt)
+        }
+    }
+
+    private fun applyYawToRigIfCam1(dt: Float) {
+        if (activeCam != 0) return
+        val yawDir = axis(GLFW_KEY_J, GLFW_KEY_L) // J = +, L = -
+        if (yawDir != 0f) {
+            val dy = yawDir * yawSpeed * dt
+            rig1.rotate(0f, dy, 0f)
+            yaw1 += dy
+        }
+    }
+
+    private fun applyPitchToRigIfCam2(dt: Float) {
+        if (activeCam != 1) return
+        val dp = (if (isDown(GLFW_KEY_I)) +pitchSpeed * dt else 0f) +
+                (if (isDown(GLFW_KEY_K)) -pitchSpeed * dt else 0f)
+        val newPitch = (getPitchRef() + dp).coerceIn(pitchMin, pitchMax)
+        val apply = newPitch - getPitchRef()
+        if (abs(apply) > 1e-6f) {
+            rig2.rotate(apply, 0f, 0f)
+            setPitchRef(newPitch)
+        }
+    }
+
+    private val anchorMoveSpeed = 8.0f
+    private fun moveAnchorWithWASD(dt: Float) {
+        followAnchor?.let { anchor ->
+            val cam = getActiveCamera()
+            val axF = axis(GLFW_KEY_W, GLFW_KEY_S)
+            val axR = axis(GLFW_KEY_D, GLFW_KEY_A)
+            moveTransformAlongCamXZ(anchor, cam, anchorMoveSpeed, dt, axF, axR)
+        }
+    }
+
+    private fun adjustActiveCamHeightIfAnchorTarget(dt: Float) {
+        if (currentCamTarget != followAnchor || followAnchor == null) return
+        var dh = 0f
+        if (isDown(GLFW_KEY_M)) dh += camHeightAdjustSpeed * dt
+        if (isDown(GLFW_KEY_N)) dh -= camHeightAdjustSpeed * dt
+        if (dh == 0f) return
+
+        if (activeCam == 0) {
+            val newOffset = clampAnchorOffset(cam1YOffsetAnchor + dh)
+            val apply = newOffset - cam1YOffsetAnchor
+            if (abs(apply) > 1e-6f) {
+                cam1.translate(Vector3f(0f, apply, 0f))
+                cam1YOffsetAnchor = newOffset
+            }
+        } else {
+            val newOffset = clampAnchorOffset(cam2YOffsetAnchor + dh)
+            val apply = newOffset - cam2YOffsetAnchor
+            if (abs(apply) > 1e-6f) {
+                cam2.translate(Vector3f(0f, apply, 0f))
+                cam2YOffsetAnchor = newOffset
+            }
+        }
+    }
+    // ---------- Ende Hilfsfunktionen ----------
 
     // --- Zeitbasiertes Abdunkeln & Auto-Beenden ---
     private val fadeOverlay = FadeOverlay()
@@ -283,7 +435,7 @@ class Scene(private val window: GameWindow) {
             translate(Vector3f(0f, 1.0f, 0f))
             scale(Vector3f(0.8f))
         }
-        // Anchor wird NICHT gerendert (wir rufen später keinen renderDepth/render dafür auf)
+        // Anchor wird NICHT gerendert
 
         // Lichter (startweise) am Anchor
         pointLight.parent = followAnchor
@@ -531,122 +683,28 @@ class Scene(private val window: GameWindow) {
         }
         if (nowT >= totalTimeToBlack) { requestClose(); return }
 
-        val moveSpeed = 8.0f
-        val rotateSpeed = Math.toRadians(90.0).toFloat()
-
         // Rigs folgen nur der Zielposition (keine Rotation erben)
         followTarget?.let { tgt ->
             moveRigToTargetPosition(rig1, tgt)
             moveRigToTargetPosition(rig2, tgt)
         }
-        
-        // Anchor in Kamerarichtung mit WASD bewegen (strafe, keine Rotation des Anchors)
-        followAnchor?.let { anchor ->
-            val cam = getActiveCamera()
-            val view = cam.getCalculateViewMatrix()
-            val inv  = Matrix4f(view).invert()
 
-            // Welt-Forward/-Right aus Kamerapose ableiten, auf XZ projizieren
-            val forward = inv.transformDirection(Vector3f(0f, 0f, -1f)).apply {
-                y = 0f; if (lengthSquared() > 1e-8f) normalize()
-            }
-            val right = inv.transformDirection(Vector3f(1f, 0f, 0f)).apply {
-                y = 0f; if (lengthSquared() > 1e-8f) normalize()
-            }
+        // Anchor mit WASD relativ zur aktiven Kamera bewegen
+        moveAnchorWithWASD(dt)
 
-            // Eingaben sammeln
-            var axF = 0f
-            if (window.getKeyState(GLFW_KEY_W)) axF += 1f
-            if (window.getKeyState(GLFW_KEY_S)) axF -= 1f
-
-            var axR = 0f
-            if (window.getKeyState(GLFW_KEY_D)) axR += 1f
-            if (window.getKeyState(GLFW_KEY_A)) axR -= 1f
-
-            // Bewegungsvektor bilden und anwenden (in Welt-/Parent-Raum)
-            val dir = Vector3f()
-                .add(forward.mul(axF, Vector3f()))
-                .add(right.mul(axR, Vector3f()))
-
-            if (dir.lengthSquared() > 0f) {
-                dir.normalize().mul(moveSpeed * dt)
-                anchor.preTranslate(dir) // preTranslate = Welt-/Elternraum
-            }
-        }
-
-        val rig = getActiveRig()
-        val cam = getActiveCamera()
-
-        // Yaw (J/L): nur Cam1
-        if (activeCam == 0) {
-            val yawDir = (if (window.getKeyState(GLFW_KEY_J)) +1f else 0f) +
-                    (if (window.getKeyState(GLFW_KEY_L)) -1f else 0f)
-            if (yawDir != 0f) {
-                val dy = yawDir * yawSpeed * dt
-                rig.rotate(0f, dy, 0f)
-                yaw1 += dy
-            }
-        }
-
-        // Pitch (I/K): nur Cam2
-        if (activeCam == 1) {
-            var dp = 0f
-            if (window.getKeyState(GLFW_KEY_I)) dp += +pitchSpeed * dt
-            if (window.getKeyState(GLFW_KEY_K)) dp += -pitchSpeed * dt
-            val newPitch = (getPitchRef() + dp).coerceIn(pitchMin, pitchMax)
-            val apply = newPitch - getPitchRef()
-            if (abs(apply) > 1e-6f) {
-                rig.rotate(apply, 0f, 0f)
-                setPitchRef(newPitch)
-            }
-        }
+        // Kameraeingaben
+        applyYawToRigIfCam1(dt)
+        applyPitchToRigIfCam2(dt)
 
         // Zoom
-        if (activeCam == 0) {
-            val zoomIn = window.getKeyState(GLFW_KEY_U)
-            val zoomOut = window.getKeyState(GLFW_KEY_O)
-            if (cam1.projectionMode == TronCamera.ProjectionMode.Perspective) {
-                var fovDelta = 0f
-                if (zoomIn)  fovDelta += -fovZoomSpeedRad * dt
-                if (zoomOut) fovDelta +=  +fovZoomSpeedRad * dt
-                if (fovDelta != 0f) cam1.fovRad = (cam1.fovRad + fovDelta).coerceIn(fovMinRad, fovMaxRad)
-            } else {
-                var orthoDelta = 0f
-                if (zoomIn)  orthoDelta += -anchorOrthoZoomSpeed * dt // kleiner = näher
-                if (zoomOut) orthoDelta +=  +anchorOrthoZoomSpeed * dt
-                if (orthoDelta != 0f) cam1.addOrthoHeight(orthoDelta)
-            }
-        } else {
-            var fovDelta = 0f
-            if (window.getKeyState(GLFW_KEY_U)) fovDelta += -fovZoomSpeedRad * dt
-            if (window.getKeyState(GLFW_KEY_O)) fovDelta +=  +fovZoomSpeedRad * dt
-            if (fovDelta != 0f) cam2.fovRad = (cam2.fovRad + fovDelta).coerceIn(fovMinRad, fovMaxRad)
-        }
+        handleZoom(dt)
 
-        // Kamerahöhe verstellen (nur wenn Ziel = Anchor) — N runter / M hoch
-        if (currentCamTarget != null && followAnchor != null && currentCamTarget === followAnchor) {
-            var dh = 0f
-            if (window.getKeyState(GLFW_KEY_M)) dh += camHeightAdjustSpeed * dt
-            if (window.getKeyState(GLFW_KEY_N)) dh -= camHeightAdjustSpeed * dt
+        // Kamerahöhe (nur wenn Target = Anchor)
+        adjustActiveCamHeightIfAnchorTarget(dt)
 
-            if (dh != 0f) {
-                if (activeCam == 0) {
-                    val newOffset = clampAnchorOffset(cam1YOffsetAnchor + dh)
-                    val apply = newOffset - cam1YOffsetAnchor
-                    if (abs(apply) > 1e-6f) {
-                        cam1.translate(Vector3f(0f, apply, 0f))
-                        cam1YOffsetAnchor = newOffset
-                    }
-                } else {
-                    val newOffset = clampAnchorOffset(cam2YOffsetAnchor + dh)
-                    val apply = newOffset - cam2YOffsetAnchor
-                    if (abs(apply) > 1e-6f) {
-                        cam2.translate(Vector3f(0f, apply, 0f))
-                        cam2YOffsetAnchor = newOffset
-                    }
-                }
-            }
-        }
+        // Kameras im Raum halten (freie Anchor-Kamera wird NICHT geklemmt)
+        clampCameraIfNeeded(cam1)
+        clampCameraIfNeeded(cam2)
 
         // Objektsteuerung + einfache Kollisionsvermeidung
         if (chooseObj == 1 && obj1Renderable != null) {
@@ -686,18 +744,39 @@ class Scene(private val window: GameWindow) {
         }
     }
 
+    // --- NEU: Bewegungs-/Rotationsversuche mit Raum- und Objektkollision ---
     private fun tryMove(obj: Renderable, move: Vector3f, others: List<Renderable>) {
+        val prev = obj.getWorldPosition()
         obj.translate(move)
+        clampTransformableToRoom(obj) // im Raum halten
+
         val currentBox = obj.getKollision()
         val collision = others.any { it != obj && currentBox.intersects(it.getKollision()) }
-        if (collision) obj.translate(move.negate(Vector3f()))
+        if (collision) {
+            // Rückgängig auf alte exakte Weltposition
+            val now = obj.getWorldPosition()
+            obj.preTranslate(prev.sub(now))
+        }
     }
 
     private fun tryRotate(obj: Renderable, rot: Vector3f, others: List<Renderable>) {
+        val prevPos = obj.getWorldPosition()
         obj.rotate(rot.x, rot.y, rot.z)
+
+        val posAfter = obj.getWorldPosition()
+        val clamped  = clampInsideRoom(Vector3f(posAfter))
+        val outside  = !posAfter.equals(clamped, 1e-5f)
+
         val currentBox = obj.getKollision()
-        val collision = others.any { it != obj && currentBox.intersects(it.getKollision()) }
-        if (collision) obj.rotate(-rot.x, -rot.y, -rot.z)
+        val hitOther = others.any { it != obj && currentBox.intersects(it.getKollision()) }
+
+        if (outside || hitOther) {
+            // Rotation rückgängig machen
+            obj.rotate(-rot.x, -rot.y, -rot.z)
+            // minimale Drift korrigieren
+            val now = obj.getWorldPosition()
+            obj.preTranslate(prevPos.sub(now))
+        }
     }
 
     fun onKey(key: Int, scancode: Int, action: Int, mode: Int) {
