@@ -5,14 +5,13 @@ import cga.exercise.components.geometry.*
 import cga.exercise.components.light.PointLight
 import cga.exercise.components.light.SpotLight
 import cga.exercise.components.shader.ShaderProgram
-import cga.exercise.components.texture.Texture2D
 import cga.exercise.components.shadow.ShadowRenderer
 import cga.exercise.components.blackscreen.FadeOverlay          // NEU: Overlay import
 import cga.exercise.components.level.Level
 import cga.exercise.components.level.LevelLoader
+import cga.exercise.components.texture.Texture2D
 import cga.framework.GLError
 import cga.framework.GameWindow
-import cga.framework.ModelLoader
 import cga.framework.OBJLoader.loadOBJ
 import org.joml.Matrix4f
 import org.joml.Vector2f
@@ -38,7 +37,9 @@ class Scene(private val window: GameWindow) {
 
     // --- Renderables ---
 
+    private var leinwandRenderable: Renderable? = null
     private var motorrad: Renderable? = null
+    private var followAnchor: Renderable? = null
 
     // --- Auswahl / Objektsteuerung ---
 
@@ -297,6 +298,35 @@ class Scene(private val window: GameWindow) {
 
         loadLevel(0)
 
+        val diffuseObj = Texture2D("assets/textures/Porcelain001_2K-JPG_Color.jpg", true)
+        val roughObj = Texture2D("assets/textures/Porcelain001_2K-JPG_Roughness.jpg", true)
+        val normalObj = Texture2D("assets/textures/Porcelain001_2K-JPG_NormalGL.jpg", true)
+        val emissiveBlack = Texture2D("assets/textures/schwarz.png", true)
+
+        val bauerMaterial = Material(
+            diff = diffuseObj,
+            emit = emissiveBlack,
+            specular = emissiveBlack,
+            roughness = roughObj,
+            normal = normalObj,
+            shininess = 60.0f,
+            tcMultiplier = Vector2f(2.0f, 2.0f)
+        )
+
+        val leinwandObj = loadOBJ("assets/models/roomGround.obj")
+        val leinwandMeshList = leinwandObj.objects[0].meshes
+        val leinwandAttribs = arrayOf(
+            VertexAttribute(3, GL_FLOAT, 32, 0),
+            VertexAttribute(2, GL_FLOAT, 32, 12),
+            VertexAttribute(3, GL_FLOAT, 32, 20)
+        )
+        val leinwandMesh = Mesh(leinwandMeshList[0].vertexData, leinwandMeshList[0].indexData, leinwandAttribs,bauerMaterial)
+        leinwandRenderable = Renderable(mutableListOf(leinwandMesh))
+        leinwandRenderable?.translate(Vector3f(0f, 5f, -8f))
+        leinwandRenderable?.scale(Vector3f(0.2f, 0.2f, 0.2f))
+        leinwandRenderable?.rotate(Math.toRadians(90.0).toFloat(),0f,0f)
+
+
         // --- UNSICHTBARER FOLLOW-ANCHOR (ersetzt Motorrad) ---
         val anchorObj = loadOBJ("assets/models/cube.obj")
         val anchorMeshList = anchorObj.objects[0].meshes
@@ -305,7 +335,7 @@ class Scene(private val window: GameWindow) {
             VertexAttribute(2, GL_FLOAT, 32, 12),
             VertexAttribute(3, GL_FLOAT, 32, 20)
         )
-        val anchorMesh = Mesh(anchorMeshList[0].vertexData, anchorMeshList[0].indexData, anchorAttribs, oldGroundMaterial)
+        val anchorMesh = Mesh(anchorMeshList[0].vertexData, anchorMeshList[0].indexData, anchorAttribs)
         followAnchor = Renderable(mutableListOf(anchorMesh)).apply {
             translate(Vector3f(0f, 1.0f, 0f))
             scale(Vector3f(0.8f))
@@ -540,6 +570,7 @@ class Scene(private val window: GameWindow) {
         level.objects.forEach { it.render(staticShader) }
 
         motorrad?.render(staticShader)
+        leinwandRenderable?.render(staticShader)
 
         // Abdunkel-Overlay
         val alpha = if (forceBlackout) 1f else fadeAlpha()
