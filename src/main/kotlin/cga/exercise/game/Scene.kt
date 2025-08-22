@@ -17,6 +17,21 @@ import org.joml.Vector2f
 import org.joml.Vector3f
 import org.lwjgl.glfw.GLFW.*
 import org.lwjgl.opengl.GL11.*
+import org.lwjgl.opengl.GL30.GL_COLOR_ATTACHMENT0
+import org.lwjgl.opengl.GL30.GL_DEPTH24_STENCIL8
+import org.lwjgl.opengl.GL30.GL_DEPTH_STENCIL_ATTACHMENT
+import org.lwjgl.opengl.GL30.GL_FRAMEBUFFER
+import org.lwjgl.opengl.GL30.GL_FRAMEBUFFER_COMPLETE
+import org.lwjgl.opengl.GL30.GL_R8
+import org.lwjgl.opengl.GL30.GL_RENDERBUFFER
+import org.lwjgl.opengl.GL30.glBindFramebuffer
+import org.lwjgl.opengl.GL30.glBindRenderbuffer
+import org.lwjgl.opengl.GL30.glCheckFramebufferStatus
+import org.lwjgl.opengl.GL30.glFramebufferRenderbuffer
+import org.lwjgl.opengl.GL30.glFramebufferTexture2D
+import org.lwjgl.opengl.GL30.glGenFramebuffers
+import org.lwjgl.opengl.GL30.glGenRenderbuffers
+import org.lwjgl.opengl.GL30.glRenderbufferStorage
 import kotlin.math.abs
 import kotlin.math.sin
 import kotlin.system.exitProcess
@@ -29,6 +44,16 @@ class Scene(private val window: GameWindow) {
     // --- Shadow Mapping ---
     private val shadow = ShadowRenderer(1024, 1024)
     private val shadowUnit = 7
+
+    // --- Shadow-Mask Output ---
+    private var shadowMaskFBO: Int = 0
+    private var shadowMaskTex: Int = 0
+    private val shadowMaskShader = ShaderProgram(
+        "assets/shaders/tron_vert.glsl",
+        "assets/shaders/shadowMask/shadowMask_frag.glsl"
+    )
+    private val shadowMaskWidth = 1024
+    private val shadowMaskHeight = 1024
 
 
     // --- Level ---
@@ -128,7 +153,6 @@ class Scene(private val window: GameWindow) {
             scale(Vector3f(0.8f))
         }
 
-        // <<< WICHTIG >>> freie Kamera an Motorrad parenten (Fallback: Würfel)
         camera.setAnchor(anchorTarget())
 
         // Lichter am Anchor (Motorrad bevorzugt)
@@ -146,6 +170,47 @@ class Scene(private val window: GameWindow) {
         // Kamera-Targets (Level-Objekte) einmalig setzen
         rebuildCameraTargets()
 
+
+
+
+        // Shadow-Mask FBO anlegen
+        val fbos = IntArray(1)
+        glGenFramebuffers(fbos)
+        shadowMaskFBO = fbos[0]
+        glBindFramebuffer(GL_FRAMEBUFFER, shadowMaskFBO)
+
+// Textur für Maske
+        val textures = IntArray(1)
+        glGenTextures(textures)
+        shadowMaskTex = textures[0]
+        glBindTexture(GL_TEXTURE_2D, shadowMaskTex)
+        glTexImage2D(
+            GL_TEXTURE_2D, 0, GL_R8, shadowMaskWidth, shadowMaskHeight,
+            0, GL_RED, GL_UNSIGNED_BYTE, 0L
+        )
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
+
+// Attache Texture als Color Attachment
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, shadowMaskTex, 0)
+
+// Optional: Renderbuffer für Depth
+        val rbos = IntArray(1)
+        glGenRenderbuffers(rbos)
+        glBindRenderbuffer(GL_RENDERBUFFER, rbos[0])
+        glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, shadowMaskWidth, shadowMaskHeight)
+        glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, rbos[0])
+
+// Check
+        if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+            println("ERROR: ShadowMask FBO ist nicht vollständig!")
+        }
+
+        glBindFramebuffer(GL_FRAMEBUFFER, 0)
+
+
+
+
         // OpenGL State
         glClearColor(0f, 0f, 0f, 1f); GLError.checkThrow()
         glEnable(GL_DEPTH_TEST)
@@ -161,14 +226,14 @@ class Scene(private val window: GameWindow) {
         val vp = IntArray(4)
         glGetIntegerv(GL_VIEWPORT, vp)
 
-        // Light-space 1
+        // Light-space
         val ls_BikeSpot: Matrix4f? = bikeSpot?.let { sp ->
             val pos = sp.getWorldPosition()
             val target = level.objects.getOrNull(1)?.getWorldPosition() ?: Vector3f(0f, 2f, -2f)
             shadow.buildLightSpacePerspective(pos, target, fovRad = Math.toRadians(90.0).toFloat(), near = 1.0f, far = 10000f)
         }
 
-        // Depth Pass 1
+        // Depth Pass
         if (ls_BikeSpot != null) {
             shadow.beginDepthPass(ls_BikeSpot)
             val ds = shadow.depthShader()
@@ -179,15 +244,49 @@ class Scene(private val window: GameWindow) {
             shadow.endDepthPass()
         }
 
+        // Shadow-Mask Pass
+        glViewport(0, 0, shadowMaskWidth, shadowMaskHeight)
+        glBindFramebuffer(GL_FRAMEBUFFER, shadowMaskFBO)
+        glClear(GL_COLOR_BUFFER_BIT or GL_DEPTH_BUFFER_BIT)
+
+        shadowMaskShader.use()
+
+        // Kamera bleibt wie gehabt, wir wollen vom View der normalen Kamera rendern
+        val cam_ShadowMaskPass = camera.activeCamera
+        cam_ShadowMaskPass.bind(shadowMaskShader)
+
+        bikeSpot?.let { sp ->
+            shadowMaskShader.setUniform("spotLight_color", sp.color)
+            sp.bind(shadowMaskShader, cam_ShadowMaskPass.getCalculateViewMatrix())
+
+            // Richtung berechnen
+            val targetWS = anchorTarget()?.getWorldPosition()?.add(0f, 0f, -2f) ?: Vector3f(0f, 0f, -2f)
+            val dirWorld = Vector3f(targetWS).sub(sp.getWorldPosition()).normalize()
+            val dirView  = cam_ShadowMaskPass.getCalculateViewMatrix().transformDirection(dirWorld, Vector3f()).normalize()
+            shadowMaskShader.setUniform("spot_direction_view", dirView)
+        }
+
+        // ShadowMap & LightMatrix binden
+        ls_BikeSpot?.let { shadow.bindForScenePass(shadowMaskShader, it, unit = shadowUnit) }
+
+        // Szene für Maske rendern (kein Emission, nur Geometrie + Shadow-Berechnung)
+        level.ground.render(shadowMaskShader)
+        level.room.render(shadowMaskShader)
+        level.objects.forEach { it.render(shadowMaskShader) }
+        motorrad?.render(shadowMaskShader)
+        leinwandRenderable?.render(shadowMaskShader)
+
+        glBindFramebuffer(GL_FRAMEBUFFER, 0)
+
         glViewport(vp[0], vp[1], vp[2], vp[3])
 
         // Scene Pass
         glClear(GL_COLOR_BUFFER_BIT or GL_DEPTH_BUFFER_BIT)
         staticShader.use()
 
-        val cam = camera.activeCamera
-        cam.bind(staticShader)
-        val view = cam.getCalculateViewMatrix()
+        val scenePassCam = camera.activeCamera
+        scenePassCam.bind(staticShader)
+        val view = scenePassCam.getCalculateViewMatrix()
 
         // Punktlichter (Viewspace)
         staticShader.setUniform("numPointLights", pointLights.size)
@@ -197,7 +296,6 @@ class Scene(private val window: GameWindow) {
             staticShader.setUniform("pointLight_colors[$index]", light.color)
         }
 
-        // Test-Spot mit Shadowmap
         // Bike-Spot mit Shadowmap
         bikeSpot?.let { sp ->
             staticShader.setUniform("spotLight_color", sp.color)
