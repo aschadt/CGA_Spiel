@@ -10,7 +10,7 @@ import org.lwjgl.opengl.GL20.*
 import org.lwjgl.opengl.GL30.*
 
 /**
- * HUD: 7-Segment Zeit (MM:SS) oben mittig + optionales Icon oben rechts.
+ * HUD: 7-Segment Zeit (MM:SS) oben mittig + optionales (gespiegeltes) Icon oben rechts.
  * Zeichnet in Screen-Pixel-Koordinaten (per UI-Shader nach NDC umgerechnet).
  */
 class Hud(
@@ -19,31 +19,29 @@ class Hud(
     private val scale: Float = 1.0f,
     defaultIconPath: String? = "assets/picture/bauerfigur.png"
 ) {
-    // Einfarbiger UI-Shader (Rechtecke für 7-Segment)
     private val shader = ShaderProgram(
         "assets/shaders/UI/ui_simple.vert",
         "assets/shaders/UI/ui_simple.frag"
     )
 
-    // Textur-UI-Shader (für Icon)
     private val texShader = ShaderProgram(
         "assets/shaders/UI/ui_tex.vert",
         "assets/shaders/UI/ui_tex.frag"
     )
 
-    // VAO/VBO für 7-Segment-Rechtecke (nur Position)
+    // VAO/VBO für 7-Segment
     private val vao: Int
     private val vbo: Int
 
-    // VAO/VBO für Icon (Position + UV)
+    // VAO/VBO für Icon (pos + uv)
     private val iconVao: Int
     private val iconVbo: Int
 
-    // Aktuelles Icon (kann zur Laufzeit gewechselt werden)
+    // Aktuelles Icon
     private var iconTex: Texture2D? = defaultIconPath?.let { Texture2D(it, true) }
 
     init {
-        // Rechteck-VAO/VBO (6 Vertices, 2D)
+        // 7-Segment-VAO/VBO
         vao = glGenVertexArrays()
         vbo = glGenBuffers()
         glBindVertexArray(vao)
@@ -54,7 +52,7 @@ class Hud(
         glBindBuffer(GL_ARRAY_BUFFER, 0)
         glBindVertexArray(0)
 
-        // Icon-VAO/VBO (6 Vertices, pos.xy + uv.xy)
+        // Icon-VAO/VBO
         iconVao = glGenVertexArrays()
         iconVbo = glGenBuffers()
         glBindVertexArray(iconVao)
@@ -68,39 +66,29 @@ class Hud(
         glBindVertexArray(0)
     }
 
-    /**
-     * Icon zur Laufzeit setzen (null = kein Icon).
-     */
     fun setIcon(path: String?) {
         iconTex?.cleanup()
         iconTex = path?.let { Texture2D(it, true) }
     }
 
-    /** Rückwärtskompatibler Draw (ohne Icon-Flag). */
     fun draw(viewW: Int, viewH: Int, secondsLeft: Float) =
         draw(viewW, viewH, secondsLeft, showIcon = false)
 
-    /**
-     * secondsLeft: Restzeit in Sekunden (<=0 → 00:00).
-     * showIcon: true → Icon oben rechts einblenden (falls gesetzt).
-     */
     fun draw(viewW: Int, viewH: Int, secondsLeft: Float, showIcon: Boolean) {
         val secs = if (secondsLeft > 0f) secondsLeft.toInt() else 0
         val mm = secs / 60
         val ss = secs % 60
 
-        // Layout 7-Segment
-        val W = 30f * scale     // Digit-Breite
-        val H = 50f * scale     // Digit-Höhe
-        val T = 6f  * scale     // Segment-Dicke
-        val S = 8f  * scale     // Abstand zwischen Ziffern
+        val W = 30f * scale
+        val H = 50f * scale
+        val T = 6f  * scale
+        val S = 8f  * scale
         val colonW = 10f * scale
 
         val totalWidth = (2 * W + S + colonW + S + 2 * W)
         val x0 = (viewW - totalWidth) / 2f
         val y0 = topMargin
 
-        // GL-State für HUD
         val depthWasEnabled = glIsEnabled(GL_DEPTH_TEST)
         val cullWasEnabled  = glIsEnabled(GL_CULL_FACE)
         val blendWasEnabled = glIsEnabled(GL_BLEND)
@@ -109,7 +97,6 @@ class Hud(
         glEnable(GL_BLEND)
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
 
-        // Zeit zeichnen (einfarbig)
         shader.use()
         shader.setUniform("uViewport", Vector2f(viewW.toFloat(), viewH.toFloat()))
         shader.setUniform("uColor", color)
@@ -121,12 +108,10 @@ class Hud(
         drawDigit(ss / 10, x, y0, W, H, T, viewW, viewH); x += W + S
         drawDigit(ss % 10, x, y0, W, H, T, viewW, viewH)
 
-        // Icon oben rechts (optional)
         if (showIcon) {
             drawIconTopRight(viewW, viewH)
         }
 
-        // State zurücksetzen
         if (depthWasEnabled) glEnable(GL_DEPTH_TEST) else glDisable(GL_DEPTH_TEST)
         if (cullWasEnabled)  glEnable(GL_CULL_FACE)  else glDisable(GL_CULL_FACE)
         if (blendWasEnabled) glEnable(GL_BLEND)      else glDisable(GL_BLEND)
@@ -142,7 +127,7 @@ class Hud(
         shader.cleanup()
     }
 
-    // ---------- intern ----------
+    // ---------------- intern ----------------
 
     private fun drawIconTopRight(viewW: Int, viewH: Int) {
         val tex = iconTex ?: return
@@ -151,40 +136,50 @@ class Hud(
         val w = 120f
         val x = viewW - pad - w
         val y = pad
-        drawIcon(x, y, w, h, viewW, viewH, tex)
+        // Spiegelung (horizontal): flipU = true, flipV = false
+        drawIcon(x, y, w, h, viewW, viewH, tex, flipU = true, flipV = false)
     }
 
-    private fun drawIcon(x: Float, y: Float, w: Float, h: Float, viewW: Int, viewH: Int, tex: Texture2D) {
+    /**
+     * Zeichnet das Icon. Mit flipU/flipV kann gespiegelt werden (horizontal/vertikal).
+     */
+    private fun drawIcon(
+        x: Float, y: Float, w: Float, h: Float,
+        viewW: Int, viewH: Int,
+        tex: Texture2D,
+        flipU: Boolean = true,
+        flipV: Boolean = false,
+    ) {
         val x0 = x
         val y0 = y
         val x1 = x + w
         val y1 = y + h
 
-        // UVs so gewählt, dass das Bild 180° gedreht ist (Flip beider Achsen)
-        val verts = floatArrayOf(
-            // pos.x, pos.y,  u,  v
-            x0, y0,  1f, 1f,
-            x1, y0,  0f, 1f,
-            x1, y1,  0f, 0f,
+        val u0 = if (flipU) 1f else 0f
+        val u1 = if (flipU) 0f else 1f
+        val v0 = if (flipV) 1f else 0f
+        val v1 = if (flipV) 0f else 1f
 
-            x0, y0,  1f, 1f,
-            x1, y1,  0f, 0f,
-            x0, y1,  1f, 0f
-        )
+        val verts = floatArrayOf( // pos.x, pos.y, u, v
+            x0, y0, 1f, 1f,
+            x1, y0, 0f, 1f,
+            x1, y1, 0f, 0f,
+
+            x0, y0, 1f, 1f,
+            x1, y1, 0f, 0f,
+            x0, y1, 1f, 0f )
 
         texShader.use()
         texShader.setUniform("uViewport", Vector2f(viewW.toFloat(), viewH.toFloat()))
         texShader.setUniform("uTex", 0)
 
         tex.bind(0)
-
         glBindVertexArray(iconVao)
         glBindBuffer(GL_ARRAY_BUFFER, iconVbo)
         glBufferData(GL_ARRAY_BUFFER, verts, GL_DYNAMIC_DRAW)
         glDrawArrays(GL_TRIANGLES, 0, 6)
         glBindBuffer(GL_ARRAY_BUFFER, 0)
         glBindVertexArray(0)
-
         tex.unbind()
     }
 
@@ -199,7 +194,6 @@ class Hud(
     }
 
     private fun drawDigit(d: Int, x: Float, y: Float, W: Float, H: Float, T: Float, vw: Int, vh: Int) {
-        // A,B,C,D,E,F,G
         val seg = when (d) {
             0 -> booleanArrayOf(true,  true,  true,  true,  true,  true,  false)
             1 -> booleanArrayOf(false, true,  true,  false, false, false, false)
