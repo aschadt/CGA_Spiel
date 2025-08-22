@@ -196,8 +196,7 @@ class CameraController {
 
     /** Nur Y-Clamping (wird von außen mit Raumgrenzen aufgerufen) */
     fun clampCameras(roomMin: Vector3f, roomMax: Vector3f, margin: Float) {
-        clampY(cams[0], roomMin.y, roomMax.y, margin)
-        clampY(cams[1], roomMin.y, roomMax.y, margin)
+
     }
 
     // --------------------- Internals ---------------------
