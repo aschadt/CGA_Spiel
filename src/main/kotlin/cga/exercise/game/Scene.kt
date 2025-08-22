@@ -25,7 +25,9 @@ class Scene(private val window: GameWindow) {
 
     // --- Shader ---
     private val staticShader = ShaderProgram("assets/shaders/tron_vert.glsl", "assets/shaders/tron_frag.glsl")
+    private val nightShader = ShaderProgram("assets/shaders/tron_vert.glsl", "assets/shaders/Shadow Mapping/depth/depth_frag.glsl")
 
+    private var useNightShader = false
     // --- Shadow Mapping ---
     private val shadow = ShadowRenderer(1024, 1024)
     private val shadowUnit = 7
@@ -183,40 +185,40 @@ class Scene(private val window: GameWindow) {
 
         // Scene Pass
         glClear(GL_COLOR_BUFFER_BIT or GL_DEPTH_BUFFER_BIT)
-        staticShader.use()
+
+        // Shader auswählen
+        val shader = if (useNightShader) nightShader else staticShader
+        shader.use()
 
         val cam = camera.activeCamera
-        cam.bind(staticShader)
+        cam.bind(shader)
         val view = cam.getCalculateViewMatrix()
 
-        // Punktlichter (Viewspace)
-        staticShader.setUniform("numPointLights", pointLights.size)
-        for ((index, light) in pointLights.withIndex()) {
-            val viewPos = view.transformPosition(light.getWorldPosition(), Vector3f())
-            staticShader.setUniform("pointLight_positions[$index]", viewPos)
-            staticShader.setUniform("pointLight_colors[$index]", light.color)
-        }
+        if (!useNightShader) {
+            shader.setUniform("numPointLights", pointLights.size)
+            for ((index, light) in pointLights.withIndex()) {
+                val viewPos = cam.getCalculateViewMatrix().transformPosition(light.getWorldPosition(), Vector3f())
+                shader.setUniform("pointLight_positions[$index]", viewPos)
+                shader.setUniform("pointLight_colors[$index]", light.color)
+            }
 
-        // Test-Spot mit Shadowmap
-        // Bike-Spot mit Shadowmap
-        bikeSpot?.let { sp ->
-            staticShader.setUniform("spotLight_color", sp.color)
-            sp.bind(staticShader, view)
-
-            // Richtung: zielt auf einen Punkt vor dem Bike/Anchor
-            val targetWS = anchorTarget()?.getWorldPosition()?.add(0f, 0f, -2f) ?: Vector3f(0f, 0f, -2f)
-            val dirWorld = Vector3f(targetWS).sub(sp.getWorldPosition()).normalize()
-            val dirView  = view.transformDirection(dirWorld, Vector3f()).normalize()
-            staticShader.setUniform("spot_direction_view", dirView)
+            // Spotlight
+            bikeSpot?.let { sp ->
+                shader.setUniform("spotLight_color", sp.color)
+                val targetWS = anchorTarget()?.getWorldPosition()?.add(0f, 0f, -2f) ?: Vector3f(0f, 0f, -2f)
+                val dirWorld = Vector3f(targetWS).sub(sp.getWorldPosition()).normalize()
+                val dirView  = cam.getCalculateViewMatrix().transformDirection(dirWorld, Vector3f()).normalize()
+                shader.setUniform("spot_direction_view", dirView)
+            }
 
             // Shadow-Map binden
-            ls_BikeSpot?.let { shadow.bindForScenePass(staticShader, it, unit = shadowUnit) }
+            ls_BikeSpot?.let { shadow.bindForScenePass(shader, it, unit = shadowUnit) }
         }
 
         // Anchor-Spot ohne Shadowmap
         bikeSpot?.let { sp ->
-            staticShader.setUniform("spotLight_color", sp.color)
-            sp.bind(staticShader, view)
+            shader.setUniform("spotLight_color", sp.color)
+            sp.bind(shader, view)
         }
 
         // Emission-Tint
@@ -226,11 +228,11 @@ class Scene(private val window: GameWindow) {
         staticShader.setUniform("emission_tint", Vector3f(r, g, b))
 
         // Render
-        level.ground.render(staticShader)
-        level.room.render(staticShader)
-        level.objects.forEach { it.render(staticShader) }
-        motorrad?.render(staticShader)
-        leinwandRenderable?.render(staticShader)
+        level.ground.render(shader)
+        level.room.render(shader)
+        level.objects.forEach { it.render(shader) }
+        motorrad?.render(shader)
+        leinwandRenderable?.render(shader)
 
         // Fade-Overlay
         val alpha = if (forceBlackout) 1f else fadeAlpha()
@@ -314,6 +316,12 @@ class Scene(private val window: GameWindow) {
             forceBlackoutTimer = 0f
             println("SOFORT-SCHWARZ aktiviert (Taste B).")
         }
+
+        if (key == GLFW_KEY_SPACE) {
+            useNightShader = !useNightShader
+            println("Nachtsicht: ${if (useNightShader) "AN" else "AUS"}")
+        }
+
     }
 
     fun onMouseMove(xpos: Double, ypos: Double) {
