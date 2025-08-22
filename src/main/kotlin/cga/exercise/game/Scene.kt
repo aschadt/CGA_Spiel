@@ -46,11 +46,10 @@ class Scene(private val window: GameWindow) {
     private val objMoveModes = mutableMapOf<Renderable, Boolean>()
 
     // --- Lichter ---
-    private val pointLight = PointLight(Vector3f(0f, 1f, 0f), Vector3f(1f, 1f, 1f))
+    //private val pointLight = PointLight(Vector3f(0f, 1f, 0f), Vector3f(1f, 1f, 1f))
     private var bikeSpot: SpotLight? = null
 
     private val pointLights = listOf(
-        pointLight,
         PointLight(Vector3f(-9f, 1.5f, -9f), Vector3f(1f, 1f, 1f)),
         PointLight(Vector3f( 9f, 1.5f, -9f), Vector3f(1f, 1f, 1f)),
         PointLight(Vector3f( 9f, 1.5f,  9f), Vector3f(1f, 1f, 1f)),
@@ -133,16 +132,16 @@ class Scene(private val window: GameWindow) {
         camera.setAnchor(anchorTarget())
 
         // Lichter am Anchor (Motorrad bevorzugt)
-        pointLight.parent = anchorTarget()
-        pointLight.translate(Vector3f(0f, 1.5f, 0f))
+        //pointLight.parent = anchorTarget()
+        //pointLight.translate(Vector3f(0f, 1.5f, 0f))
 
 
         bikeSpot = SpotLight(
-            position = Vector3f(0.8f, 3.0f, 0.0f),
-            color = Vector3f(1f, 0.95f, 0.9f),
+            position = Vector3f(0.0f, 5.0f, 3.0f),
+            color = Vector3f(1f, 1f, 1f),
             innerAngle = Math.toRadians(18.0).toFloat(),
             outerAngle = Math.toRadians(26.0).toFloat()
-        ).also { it.parent = anchorTarget() }
+        )
 
         // Kamera-Targets (Level-Objekte) einmalig setzen
         rebuildCameraTargets()
@@ -166,7 +165,7 @@ class Scene(private val window: GameWindow) {
         val ls_BikeSpot: Matrix4f? = bikeSpot?.let { sp ->
             val pos = sp.getWorldPosition()
             val target = level.objects.getOrNull(1)?.getWorldPosition() ?: Vector3f(0f, 2f, -2f)
-            shadow.buildLightSpacePerspective(pos, target, fovRad = Math.toRadians(120.0).toFloat(), near = 10.0f, far = 10000f)
+            shadow.buildLightSpacePerspective(pos, target, fovRad = Math.toRadians(90.0).toFloat(), near = 1.0f, far = 10000f)
         }
 
         // Depth Pass 1

@@ -27,10 +27,6 @@ object LevelLoader {
 
         val emissiveBlack = Texture2D("assets/textures/schwarz.png", true)
 
-        val startPosObj1 = Vector3f(2f, 2f, -2f)
-        val startPosObj2 = Vector3f(0f, 2f, -2f)
-        val startPosObj3 = Vector3f(-2f, 2f, -2f)
-
         val wallMaterial = Material(
             diff = diffuseWall,
             emit = emissiveBlack,
@@ -94,8 +90,8 @@ object LevelLoader {
         )
         val obj1Mesh = Mesh(obj1MeshList[0].vertexData, obj1MeshList[0].indexData, obj1Attribs, bauerMaterial)
         val obj1Renderable = Renderable(mutableListOf(obj1Mesh)).apply {
-            translate(startPosObj1)
-            scale(Vector3f(0.5f, 0.5f, 0.5f))
+            translate(Vector3f(2f, 4f, -2f))
+            scale(Vector3f(0.3f, 0.3f, 0.3f))
         }
 
         // Obj 2 (Cone)
@@ -108,8 +104,8 @@ object LevelLoader {
         )
         val obj2Mesh = Mesh(obj2MeshList[0].vertexData, obj2MeshList[0].indexData, obj2Attribs, bauerMaterial)
         val obj2Renderable = Renderable(mutableListOf(obj2Mesh)).apply {
-            translate(startPosObj2)
-            scale(Vector3f(0.5f, 0.5f, 0.5f))
+            translate(Vector3f(0f, 4f, -2f))
+            scale(Vector3f(0.3f, 0.3f, 0.3f))
         }
 
         // Obj 3 (Zylinder)
@@ -122,8 +118,8 @@ object LevelLoader {
         )
         val obj3Mesh = Mesh(obj3MeshList[0].vertexData, obj3MeshList[0].indexData, obj3Attribs, bauerMaterial)
         val obj3Renderable = Renderable(mutableListOf(obj3Mesh)).apply {
-            translate(startPosObj3)
-            scale(Vector3f(0.5f, 0.5f, 0.5f))
+            translate(Vector3f(-2f, 4f, -2f))
+            scale(Vector3f(0.3f, 0.3f, 0.3f))
         }
 
         return Level(ground = groundRenderable,
@@ -214,7 +210,7 @@ object LevelLoader {
         )
         val obj1Mesh = Mesh(obj1MeshList[0].vertexData, obj1MeshList[0].indexData, obj1Attribs, bauerMaterial)
         val obj1Renderable = Renderable(mutableListOf(obj1Mesh)).apply {
-            translate(startPosObj1)
+            translate(Vector3f(2f, 2f, -2f))
             scale(Vector3f(0.5f, 0.5f, 0.5f))
         }
 
@@ -228,7 +224,7 @@ object LevelLoader {
         )
         val obj2Mesh = Mesh(obj2MeshList[0].vertexData, obj2MeshList[0].indexData, obj2Attribs, bauerMaterial)
         val obj2Renderable = Renderable(mutableListOf(obj2Mesh)).apply {
-            translate(startPosObj2)
+            translate(Vector3f(0f, 2f, -2f))
             scale(Vector3f(0.5f, 0.5f, 0.5f))
         }
 
@@ -242,7 +238,7 @@ object LevelLoader {
         )
         val obj3Mesh = Mesh(obj3MeshList[0].vertexData, obj3MeshList[0].indexData, obj3Attribs, bauerMaterial)
         val obj3Renderable = Renderable(mutableListOf(obj3Mesh)).apply {
-            translate(startPosObj3)
+            translate(Vector3f(-2f, 2f, -2f))
             scale(Vector3f(0.5f, 0.5f, 0.5f))
         }
 
