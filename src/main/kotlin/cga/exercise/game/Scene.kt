@@ -41,6 +41,8 @@ class Scene(private val window: GameWindow) {
     private val shadowMaskWidth = 1024
     private val shadowMaskHeight = 1024
 
+    // shadow mask dump in byte
+
     //--- Debug-Flags ---
     private var showMaskDebug = false
 
