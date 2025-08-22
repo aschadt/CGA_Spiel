@@ -254,9 +254,9 @@ object LevelLoader {
         val roughGround = Texture2D("assets/textures/wood_floor_rough_2k.jpg", true)
         val normalGround = Texture2D("assets/textures/wood_floor_nor_gl_2k.jpg", true)
 
-        val diffuseObj = Texture2D("assets/textures/Porcelain001_2K-JPG_Color.jpg", true)
-        val roughObj = Texture2D("assets/textures/Porcelain001_2K-JPG_Roughness.jpg", true)
-        val normalObj = Texture2D("assets/textures/Porcelain001_2K-JPG_NormalGL.jpg", true)
+        val diffuseObj = Texture2D("assets/textures/plywood_diff_2k.jpg", true)
+        val roughObj = Texture2D("assets/textures/plywood_rough_2k.jpg", true)
+        val normalObj = Texture2D("assets/textures/plywood_nor_gl_2k.jpg", true)
 
         val emissiveBlack = Texture2D("assets/textures/schwarz.png", true)
 
@@ -286,7 +286,7 @@ object LevelLoader {
             roughness = roughObj,
             normal = normalObj,
             shininess = 60.0f,
-            tcMultiplier = Vector2f(2.0f, 2.0f)
+            tcMultiplier = Vector2f(1.0f, 1.0f)
         )
 
         // Ground

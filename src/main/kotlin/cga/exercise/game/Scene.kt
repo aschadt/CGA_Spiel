@@ -60,9 +60,9 @@ class Scene(private val window: GameWindow) {
     private val camera = CameraController()
 
     // --- Raumgrenzen ---
-    private val roomMin = Vector3f(-9.9f, 0.0f, -9.9f)
-    private val roomMax = Vector3f( 9.9f, 7.0f,  9.9f)
-    private val wallMargin = 0.30f
+    private val roomMin = Vector3f(-9.9f, 0.2f, -9.9f)
+    private val roomMax = Vector3f( 9.9f, 9.8f,  9.9f)
+    private val wallMargin = 0.10f
 
     private companion object { private const val EPS_POS2 = 1e-10f }
 
