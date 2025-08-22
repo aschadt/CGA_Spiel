@@ -71,9 +71,9 @@ class Scene(private val window: GameWindow) {
 
     // --- Fade/Auto-Exit ---
     private val fadeOverlay = FadeOverlay()
-    private val totalTimeToBlack = 300.0f
+    private val totalTimeToBlack = 240.0f
     private val finalFadeDuration = 120.0f
-    private var nowT = 0f
+    private var countdownT = 0f
     private var quitIssued = false
     private var forceBlackout = false
     private var forceBlackoutTimer = 0f
@@ -238,26 +238,35 @@ class Scene(private val window: GameWindow) {
         motorrad?.render(shader)
         leinwandRenderable?.render(shader)
 
-        // Fade-Overlay
-        val alpha = if (forceBlackout) 1f else fadeAlpha()
+        // Fade-Overlay: Night-Shader nicht abdunkeln
+        // - Bei Night-Shader: kein Fade (alpha=0), außer bei Force-Blackout (alpha=1)
+        // - Bei normalem Shader: wie gehabt (Fade + optionaler Blackout)
+        val alpha = when {
+            useNightShader -> if (forceBlackout) 1f else 0f
+            forceBlackout  -> 1f
+            else           -> fadeAlpha()
+        }
         fadeOverlay.draw(alpha)
 
         // --- HUD nach der Szene zeichnen (fadet nicht mit) ---
         hud.draw(
             vp[2], vp[3],
-            secondsLeft = kotlin.math.max(0f, totalTimeToBlack - nowT),
-            showIcon = (levelIndex in 0..2)   // vorher evtl. nur == 0
+            secondsLeft = kotlin.math.max(0f, totalTimeToBlack - countdownT),
+            showIcon = (levelIndex in 0..2)
         )
     }
 
     // --- Update ---
     fun update(dt: Float, t: Float) {
-        nowT = t
+
+        if (!useNightShader && !forceBlackout) {
+            countdownT += dt
+        }
         if (forceBlackout) {
             forceBlackoutTimer += dt
             if (forceBlackoutTimer >= forceBlackoutHold) { requestClose(); return }
         }
-        if (nowT >= totalTimeToBlack) { requestClose(); return }
+        if (countdownT >= totalTimeToBlack) { requestClose(); return }
 
         camera.update(dt, window)
 
@@ -509,7 +518,7 @@ class Scene(private val window: GameWindow) {
 
     private fun fadeAlpha(): Float {
         val fadeStart = totalTimeToBlack - finalFadeDuration
-        val x = (nowT - fadeStart) / finalFadeDuration
+        val x = (countdownT - fadeStart) / finalFadeDuration
         return x.coerceIn(0f, 1f)
     }
 
