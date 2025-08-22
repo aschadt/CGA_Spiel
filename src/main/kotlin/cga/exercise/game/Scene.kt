@@ -17,21 +17,7 @@ import org.joml.Vector2f
 import org.joml.Vector3f
 import org.lwjgl.glfw.GLFW.*
 import org.lwjgl.opengl.GL11.*
-import org.lwjgl.opengl.GL30.GL_COLOR_ATTACHMENT0
-import org.lwjgl.opengl.GL30.GL_DEPTH24_STENCIL8
-import org.lwjgl.opengl.GL30.GL_DEPTH_STENCIL_ATTACHMENT
-import org.lwjgl.opengl.GL30.GL_FRAMEBUFFER
-import org.lwjgl.opengl.GL30.GL_FRAMEBUFFER_COMPLETE
-import org.lwjgl.opengl.GL30.GL_R8
-import org.lwjgl.opengl.GL30.GL_RENDERBUFFER
-import org.lwjgl.opengl.GL30.glBindFramebuffer
-import org.lwjgl.opengl.GL30.glBindRenderbuffer
-import org.lwjgl.opengl.GL30.glCheckFramebufferStatus
-import org.lwjgl.opengl.GL30.glFramebufferRenderbuffer
-import org.lwjgl.opengl.GL30.glFramebufferTexture2D
-import org.lwjgl.opengl.GL30.glGenFramebuffers
-import org.lwjgl.opengl.GL30.glGenRenderbuffers
-import org.lwjgl.opengl.GL30.glRenderbufferStorage
+import org.lwjgl.opengl.GL30.*
 import kotlin.math.abs
 import kotlin.math.sin
 import kotlin.system.exitProcess
@@ -54,6 +40,18 @@ class Scene(private val window: GameWindow) {
     )
     private val shadowMaskWidth = 1024
     private val shadowMaskHeight = 1024
+
+    //--- Debug-Flags ---
+    private var showMaskDebug = false
+
+    // --- Debug-Quad (Fullscreen) ---
+    private var quadVao = 0
+    private var quadVbo = 0
+    private val screenShader = ShaderProgram(
+        "assets/shaders/quad/screen_quad_vert.glsl",
+        "assets/shaders/quad/screen_mask:frag.glsl"
+    )
+    private val maskTexUnit = 5 // frei wähawdawdawdawdlbar
 
 
     // --- Level ---
@@ -171,15 +169,13 @@ class Scene(private val window: GameWindow) {
         rebuildCameraTargets()
 
 
-
-
-        // Shadow-Mask FBO anlegen
+// Shadow-Mask FBO anlegen
         val fbos = IntArray(1)
         glGenFramebuffers(fbos)
         shadowMaskFBO = fbos[0]
         glBindFramebuffer(GL_FRAMEBUFFER, shadowMaskFBO)
 
-// Textur für Maske
+        // Textur für Maske
         val textures = IntArray(1)
         glGenTextures(textures)
         shadowMaskTex = textures[0]
@@ -191,27 +187,54 @@ class Scene(private val window: GameWindow) {
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
 
-// Attache Texture als Color Attachment
+        // Attache Texture als Color Attachment
         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, shadowMaskTex, 0)
 
-// Optional: Renderbuffer für Depth
+        // Optional: Renderbuffer für Depth
         val rbos = IntArray(1)
         glGenRenderbuffers(rbos)
         glBindRenderbuffer(GL_RENDERBUFFER, rbos[0])
         glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, shadowMaskWidth, shadowMaskHeight)
         glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, rbos[0])
 
-// Check
+        // Check
         if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
             println("ERROR: ShadowMask FBO ist nicht vollständig!")
         }
 
         glBindFramebuffer(GL_FRAMEBUFFER, 0)
+// Shadow Mask FBO fertig
+// Quad - Setup
 
+        // Fullscreen-Quad für Debug-Ausgabe
+        val quadVerts = floatArrayOf(
+            //  aPos.xy   aUV.xy
+            -1f, -1f,    0f, 0f,
+            1f, -1f,    1f, 0f,
+            1f,  1f,    1f, 1f,
+            -1f, -1f,    0f, 0f,
+            1f,  1f,    1f, 1f,
+            -1f,  1f,    0f, 1f
+        )
+        val ids = IntArray(1)
+        quadVao = glGenVertexArrays()
+        glBindVertexArray(quadVao)
 
+        quadVbo = glGenBuffers()
+        glBindBuffer(GL_ARRAY_BUFFER, quadVbo)
+        glBufferData(GL_ARRAY_BUFFER, quadVerts, GL_STATIC_DRAW)
 
+    // aPos (loc 0)
+        glEnableVertexAttribArray(0)
+        glVertexAttribPointer(0, 2, GL_FLOAT, false, 4 * 4, 0L)
+    // aUV  (loc 1)
+        glEnableVertexAttribArray(1)
+        glVertexAttribPointer(1, 2, GL_FLOAT, false, 4 * 4, (2 * 4).toLong())
 
-        // OpenGL State
+        glBindVertexArray(0)
+        glBindBuffer(GL_ARRAY_BUFFER, 0)
+
+// OpenGL State
         glClearColor(0f, 0f, 0f, 1f); GLError.checkThrow()
         glEnable(GL_DEPTH_TEST)
         glEnable(GL_CULL_FACE)
@@ -280,7 +303,38 @@ class Scene(private val window: GameWindow) {
 
         glViewport(vp[0], vp[1], vp[2], vp[3])
 
-        // Scene Pass
+
+
+// --- DEBUG: Shadow-Maske fullscreen ausgeben ---
+
+        if(showMaskDebug == false) {
+            glBindFramebuffer(GL_FRAMEBUFFER, 0)
+            glViewport(vp[0], vp[1], vp[2], vp[3])
+            glDisable(GL_DEPTH_TEST)                 // fullscreen quad braucht kein Depth-Test
+            glClear(GL_COLOR_BUFFER_BIT)
+
+// Screen-Shader + Maske binden
+            screenShader.use()
+            glActiveTexture(GL_TEXTURE0 + maskTexUnit)
+            glBindTexture(GL_TEXTURE_2D, shadowMaskTex)
+            screenShader.setUniform("uTex", maskTexUnit)
+
+// Quad zeichnen
+            glBindVertexArray(quadVao)
+            glDrawArrays(GL_TRIANGLES, 0, 6)
+            glBindVertexArray(0)
+            glEnable(GL_DEPTH_TEST)
+
+// Overlay (optional)
+            val alphaD = if (forceBlackout) 1f else fadeAlpha()
+            fadeOverlay.draw(alphaD)
+
+// Früher return(), wenn du NUR die Maske sehen willst:
+            return
+        }
+
+//Mask pass fertig
+// Scene Pass
         glClear(GL_COLOR_BUFFER_BIT or GL_DEPTH_BUFFER_BIT)
         staticShader.use()
 
@@ -331,8 +385,8 @@ class Scene(private val window: GameWindow) {
         leinwandRenderable?.render(staticShader)
 
         // Fade-Overlay
-        val alpha = if (forceBlackout) 1f else fadeAlpha()
-        fadeOverlay.draw(alpha)
+        val alphaF = if (forceBlackout) 1f else fadeAlpha()
+        fadeOverlay.draw(alphaF)
     }
 
     // --- Update ---
@@ -411,6 +465,12 @@ class Scene(private val window: GameWindow) {
             forceBlackoutTimer = 0f
             println("SOFORT-SCHWARZ aktiviert (Taste B).")
         }
+
+        if (key == GLFW_KEY_0) {
+            showMaskDebug = !showMaskDebug
+            println("Shadow-Mask-Debug: ${if (showMaskDebug) "AN" else "AUS"}")
+        }
+
     }
 
     fun onMouseMove(xpos: Double, ypos: Double) {
