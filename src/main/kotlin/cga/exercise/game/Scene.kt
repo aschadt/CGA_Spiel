@@ -292,9 +292,9 @@ class Scene(private val window: GameWindow) {
         if (action != GLFW_PRESS) return
 
         // Kamera-FOKUS + STEUERUNG (1/2/3)
-        if (key == GLFW_KEY_1) { focusSelection(1, snap = true); setControl(0) }
-        if (key == GLFW_KEY_2) { focusSelection(2, snap = true); setControl(1) }
-        if (key == GLFW_KEY_3) { focusSelection(3, snap = true); setControl(2) }
+        if (key == GLFW_KEY_1) { focusSelection(0, snap = true); setControl(0) }
+        if (key == GLFW_KEY_2) { focusSelection(1, snap = true); setControl(1) }
+        if (key == GLFW_KEY_3) { focusSelection(2, snap = true); setControl(2) }
 
         // Nur KAMERA-FOKUS (F1–F4)
         if (key == GLFW_KEY_F1) { focusSelection(0, snap = true) }
@@ -349,40 +349,28 @@ class Scene(private val window: GameWindow) {
 
     private fun buildTargetsList(): MutableList<Transformable> {
         val targets = mutableListOf<Transformable>()
-        followAnchor?.let { targets += it }
         currentLevel?.objects?.forEach { targets += it }
         return targets
     }
 
     private fun focusSelection(idx: Int, snap: Boolean = true) {
-        val targets = buildTargetsList()
-        if (idx !in targets.indices) return
+        val lvl = currentLevel ?: return
+        if (idx !in lvl.objects.indices) return
         focusIndex = idx
-        camera.setTargets(targets, initialIndex = idx, snap = snap)
-        val what = if (idx == 0) "FollowAnchor" else "Objekt $idx"
-        println("Kamera-Fokus: $what")
+        camera.setTargets(buildTargetsList(), initialIndex = idx, snap = snap)
+        println("Kamera-Fokus: Objekt ${idx + 1}")
     }
-
 
     private fun cycleFocus(forward: Boolean) {
-        val targets = buildTargetsList()
-        if (targets.isEmpty()) return
+        val lvl = currentLevel ?: return
+        if (lvl.objects.isEmpty()) return
         focusIndex = if (forward)
-            (focusIndex + 1) % targets.size
+            (focusIndex + 1) % lvl.objects.size
         else
-            (focusIndex - 1 + targets.size) % targets.size
-        camera.setTargets(targets, initialIndex = focusIndex, snap = true)
-        val what = if (focusIndex == 0) "FollowAnchor" else "Objekt $focusIndex"
-        println("Kamera-Fokus gewechselt → $what")
+            (focusIndex - 1 + lvl.objects.size) % lvl.objects.size
+        camera.setTargets(buildTargetsList(), initialIndex = focusIndex, snap = true)
+        println("Kamera-Fokus gewechselt → Objekt ${focusIndex + 1}")
     }
-
-    private fun rebuildCameraTargets() {
-        val targets = buildTargetsList()
-        if (targets.isEmpty()) return
-        focusIndex = focusIndex.coerceIn(0, targets.lastIndex)
-        camera.setTargets(targets, initialIndex = focusIndex, snap = true)
-    }
-
 
     private fun setControl(idx: Int) {
         val lvl = currentLevel ?: return
@@ -489,6 +477,10 @@ class Scene(private val window: GameWindow) {
             val now = obj.getWorldPosition()
             obj.preTranslate(prevPos.sub(now))
         }
+    }
+
+    private fun rebuildCameraTargets() {
+        camera.setTargets(buildTargetsList(), initialIndex = focusIndex.coerceAtMost((currentLevel?.objects?.lastIndex ?: 0)), snap = true)
     }
 
     fun loadLevel(index: Int) {
