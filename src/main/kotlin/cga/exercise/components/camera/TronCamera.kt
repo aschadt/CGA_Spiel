@@ -8,77 +8,98 @@ import kotlin.math.max
 import kotlin.math.min
 
 class TronCamera(
-    // veränderbare Projektions-Parameter
-    var fovRad: Float = Math.toRadians(90.0).toFloat(), // Blickwinkel in Radiant (änderbar -> Zoom)
-    var aspect: Float = 16.0f / 9.0f,                   // Seitenverhältnis
-    var near: Float = 0.1f,                             // Near-Plane
-    var far: Float = 100.0f                             // Far-Plane
+    // Perspektivische Projektions-Parameter
+    var fovRad: Float = Math.toRadians(90.0).toFloat(),
+    var aspect: Float = 16.0f / 9.0f,
+    var near: Float = 0.1f,
+    var far: Float = 100.0f
 ) : Transformable(), ICamera {
 
-    // optionale FOV-Grenzen für Zoom (kannst du bei Bedarf anpassen)
+    /** Aktueller Projektionsmodus der Kamera. */
+    enum class ProjectionMode { Perspective, Orthographic }
+    var projectionMode: ProjectionMode = ProjectionMode.Perspective
+
+    /** Ortho-Größe (sichtbare Höhe in Welt­einheiten) + Grenzen für Ortho-"Zoom". */
+    var orthoHeight: Float = 10f
+    var orthoMin: Float = 0.5f
+    var orthoMax: Float = 500f
+
+    /** Optionale FOV-Grenzen für perspektivischen Zoom. */
     var fovMinRad: Float = Math.toRadians(20.0).toFloat()
     var fovMaxRad: Float = Math.toRadians(100.0).toFloat()
 
-    /**
-     * Berechnet die View-Matrix der Kamera.
-     * Standard-Blickrichtung: -Z der Kamera.
-     */
+    // -------------------------
+    // View / Projection
+    // -------------------------
+
+    /** View-Matrix: Blick entlang -Z der Kamera. */
     override fun getCalculateViewMatrix(): Matrix4f {
         val eye = getWorldPosition()
-        val center = Vector3f(eye).add(getWorldZAxis().negate()) // Blick entlang -Z
+        val center = Vector3f(eye).add(getWorldZAxis().negate()) // -Z = Blickrichtung
         val up = getWorldYAxis()
         return Matrix4f().lookAt(eye, center, up)
     }
 
-    /**
-     * Berechnet die Projektionsmatrix (perspektivisch) aus den aktuellen Parametern.
-     */
+    /** Projektionsmatrix abhängig vom Modus. */
     override fun getCalculateProjectionMatrix(): Matrix4f {
-        return Matrix4f().perspective(fovRad, aspect, near, far)
+        return if (projectionMode == ProjectionMode.Perspective) {
+            Matrix4f().perspective(fovRad, aspect, near, far)
+        } else {
+            val halfH = orthoHeight * 0.5f
+            val halfW = halfH * aspect
+            Matrix4f().ortho(-halfW, halfW, -halfH, halfH, near, far)
+        }
     }
 
-    /**
-     * Schreibt View- und Proj-Matrix in den Shader.
-     */
+    /** View- und Proj-Matrix in den Shader schreiben. */
     override fun bind(shader: ShaderProgram) {
-        val view = getCalculateViewMatrix()
-        val proj = getCalculateProjectionMatrix()
-        shader.setUniform("view_matrix", view, false)
-        shader.setUniform("proj_matrix", proj, false)
+        shader.setUniform("view_matrix", getCalculateViewMatrix(), false)
+        shader.setUniform("proj_matrix", getCalculateProjectionMatrix(), false)
     }
 
     // -------------------------
     // Komfort-Methoden / Helper
     // -------------------------
 
-    /** Setzt das FOV in Grad. */
+    /** Zwischen Perspektive und Orthografisch umschalten. */
+    fun toggleProjection() {
+        projectionMode = if (projectionMode == ProjectionMode.Perspective)
+            ProjectionMode.Orthographic else ProjectionMode.Perspective
+    }
+
+    /** Ortho-"Zoom": sichtbare Höhe ändern (kleiner = näher ran). */
+    fun addOrthoHeight(delta: Float) {
+        orthoHeight = (orthoHeight + delta).coerceIn(orthoMin, orthoMax)
+    }
+
+    /** FOV direkt in Grad setzen (clamped). */
     fun setFovDeg(deg: Float) {
         fovRad = Math.toRadians(deg.toDouble()).toFloat().clamp(fovMinRad, fovMaxRad)
     }
 
-    /** Additives Zoom in Grad (negativ = reinzoomen, positiv = rauszoomen). */
+    /** Additiver Zoom in Grad (negativ = reinzoomen). */
     fun addFovDeg(deltaDeg: Float) {
         val newFov = fovRad + Math.toRadians(deltaDeg.toDouble()).toFloat()
         fovRad = newFov.clamp(fovMinRad, fovMaxRad)
     }
 
-    /** Additives Zoom in Radiant. */
+    /** Additiver Zoom in Radiant (negativ = reinzoomen). */
     fun addFovRad(deltaRad: Float) {
         fovRad = (fovRad + deltaRad).clamp(fovMinRad, fovMaxRad)
     }
 
-    /** Setzt das Aspect-Ratio, z. B. bei Fenster-Resize. */
+    /** Aspect-Ratio aktualisieren (z. B. bei Resize). */
     fun setAspect(width: Int, height: Int) {
         val h = if (height <= 0) 1 else height
         aspect = width.toFloat() / h.toFloat()
     }
 
-    /** Setzt die Near/Far-Planes (optional). */
+    /** Near/Far-Planes setzen. */
     fun setDepthRange(nearPlane: Float, farPlane: Float) {
-        this.near = nearPlane
-        this.far = farPlane
+        near = nearPlane
+        far = farPlane
     }
 
-    // kleine Hilfsfunktion fürs Clamping
+    // clamp helper
     private fun Float.clamp(minVal: Float, maxVal: Float): Float = max(minVal, min(this, maxVal))
 }
