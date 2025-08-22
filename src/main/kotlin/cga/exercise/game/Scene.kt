@@ -221,8 +221,8 @@ class Scene(private val window: GameWindow) {
 
         // Anchor-Spot ohne Shadowmap
         bikeSpot?.let { sp ->
-            staticShader.setUniform("spotLight_color", sp.color)
-            sp.bind(staticShader, view)
+            shader.setUniform("spotLight_color", sp.color)
+            sp.bind(shader, view)
         }
 
         // Emission-Tint
@@ -232,11 +232,11 @@ class Scene(private val window: GameWindow) {
         staticShader.setUniform("emission_tint", Vector3f(r, g, b))
 
         // Render
-        level.ground.render(staticShader)
-        level.room.render(staticShader)
-        level.objects.forEach { it.render(staticShader) }
-        motorrad?.render(staticShader)
-        leinwandRenderable?.render(staticShader)
+        level.ground.render(shader)
+        level.room.render(shader)
+        level.objects.forEach { it.render(shader) }
+        motorrad?.render(shader)
+        leinwandRenderable?.render(shader)
 
         // Fade-Overlay
         val alpha = if (forceBlackout) 1f else fadeAlpha()

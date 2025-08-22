@@ -97,6 +97,16 @@ class ShaderProgram(vertexShaderPath: String, fragmentShaderPath: String) {
         return false
     }
 
+    fun setUniform(name: String, value: Boolean): Boolean {
+        if (programID == 0) return false
+        val loc = GL20.glGetUniformLocation(programID, name)
+        if (loc != -1) {
+            GL20.glUniform1f(loc, if(value) 1.0f else 0.0f)
+            return true
+        }
+        return false
+    }
+
     // Für Vector3f (z. B. Lichtfarbe oder Position)
     fun setUniform(name: String, value: Vector3f): Boolean {
         if (programID == 0) return false
