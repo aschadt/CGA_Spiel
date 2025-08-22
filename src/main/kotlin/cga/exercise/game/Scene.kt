@@ -166,7 +166,7 @@ class Scene(private val window: GameWindow) {
         val ls_BikeSpot: Matrix4f? = bikeSpot?.let { sp ->
             val pos = sp.getWorldPosition()
             val target = level.objects.getOrNull(1)?.getWorldPosition() ?: Vector3f(0f, 2f, -2f)
-            shadow.buildLightSpacePerspective(pos, target, fovRad = Math.toRadians(100.0).toFloat(), near = 1.0f, far = 1000f)
+            shadow.buildLightSpacePerspective(pos, target, fovRad = Math.toRadians(120.0).toFloat(), near = 10.0f, far = 10000f)
         }
 
         // Depth Pass 1
