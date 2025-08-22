@@ -17,7 +17,7 @@ class Hud(
     private val color: Vector3f = Vector3f(1f, 1f, 1f),
     private val topMargin: Float = 20f,
     private val scale: Float = 1.0f,
-    iconPath: String = "assets/picture/bauerfigur.png" // Pfad zum HUD-Icon
+    defaultIconPath: String? = "assets/picture/bauerfigur.png"
 ) {
     // Einfarbiger UI-Shader (Rechtecke für 7-Segment)
     private val shader = ShaderProgram(
@@ -25,20 +25,22 @@ class Hud(
         "assets/shaders/UI/ui_simple.frag"
     )
 
-    // Textur-UI-Shader (für das Icon oben rechts)
+    // Textur-UI-Shader (für Icon)
     private val texShader = ShaderProgram(
         "assets/shaders/UI/ui_tex.vert",
         "assets/shaders/UI/ui_tex.frag"
     )
 
-    // VAO/VBO für Rechtecke (nur Position, genutzt von ui_simple)
+    // VAO/VBO für 7-Segment-Rechtecke (nur Position)
     private val vao: Int
     private val vbo: Int
 
-    // VAO/VBO für Icon (Position + UV, genutzt von ui_tex)
+    // VAO/VBO für Icon (Position + UV)
     private val iconVao: Int
     private val iconVbo: Int
-    private val iconTex = Texture2D(iconPath, true)
+
+    // Aktuelles Icon (kann zur Laufzeit gewechselt werden)
+    private var iconTex: Texture2D? = defaultIconPath?.let { Texture2D(it, true) }
 
     init {
         // Rechteck-VAO/VBO (6 Vertices, 2D)
@@ -52,28 +54,35 @@ class Hud(
         glBindBuffer(GL_ARRAY_BUFFER, 0)
         glBindVertexArray(0)
 
-        // Icon-VAO/VBO (pos.xy + uv.xy)
+        // Icon-VAO/VBO (6 Vertices, pos.xy + uv.xy)
         iconVao = glGenVertexArrays()
         iconVbo = glGenBuffers()
         glBindVertexArray(iconVao)
         glBindBuffer(GL_ARRAY_BUFFER, iconVbo)
-        // initiale Größe, wird bei drawIcon per glBufferData mit Array überschrieben
         glBufferData(GL_ARRAY_BUFFER, (6 * 4 * 4).toLong(), GL_DYNAMIC_DRAW)
-        glEnableVertexAttribArray(0)
+        glEnableVertexAttribArray(0) // pos
         glVertexAttribPointer(0, 2, GL_FLOAT, false, 4 * 4, 0L)
-        glEnableVertexAttribArray(1)
+        glEnableVertexAttribArray(1) // uv
         glVertexAttribPointer(1, 2, GL_FLOAT, false, 4 * 4, (2L * 4))
         glBindBuffer(GL_ARRAY_BUFFER, 0)
         glBindVertexArray(0)
     }
 
-    /** Rückwärtskompatibler Draw (ohne Icon). */
+    /**
+     * Icon zur Laufzeit setzen (null = kein Icon).
+     */
+    fun setIcon(path: String?) {
+        iconTex?.cleanup()
+        iconTex = path?.let { Texture2D(it, true) }
+    }
+
+    /** Rückwärtskompatibler Draw (ohne Icon-Flag). */
     fun draw(viewW: Int, viewH: Int, secondsLeft: Float) =
         draw(viewW, viewH, secondsLeft, showIcon = false)
 
     /**
      * secondsLeft: Restzeit in Sekunden (<=0 → 00:00).
-     * showIcon: true → Icon oben rechts einblenden.
+     * showIcon: true → Icon oben rechts einblenden (falls gesetzt).
      */
     fun draw(viewW: Int, viewH: Int, secondsLeft: Float, showIcon: Boolean) {
         val secs = if (secondsLeft > 0f) secondsLeft.toInt() else 0
@@ -124,7 +133,7 @@ class Hud(
     }
 
     fun cleanup() {
-        iconTex.cleanup()
+        iconTex?.cleanup()
         glDeleteBuffers(iconVbo)
         glDeleteVertexArrays(iconVao)
         glDeleteBuffers(vbo)
@@ -135,19 +144,29 @@ class Hud(
 
     // ---------- intern ----------
 
-    /** Icon um 180° gedreht (UV invertiert) zeichnen. */
-    private fun drawIcon(x: Float, y: Float, w: Float, h: Float, viewW: Int, viewH: Int) {
+    private fun drawIconTopRight(viewW: Int, viewH: Int) {
+        val tex = iconTex ?: return
+        val pad = 20f
+        val h = 120f
+        val w = 120f
+        val x = viewW - pad - w
+        val y = pad
+        drawIcon(x, y, w, h, viewW, viewH, tex)
+    }
+
+    private fun drawIcon(x: Float, y: Float, w: Float, h: Float, viewW: Int, viewH: Int, tex: Texture2D) {
         val x0 = x
         val y0 = y
         val x1 = x + w
         val y1 = y + h
 
-        // UVs invertiert = 180° Rotation
+        // UVs so gewählt, dass das Bild 180° gedreht ist (Flip beider Achsen)
         val verts = floatArrayOf(
             // pos.x, pos.y,  u,  v
             x0, y0,  1f, 1f,
             x1, y0,  0f, 1f,
             x1, y1,  0f, 0f,
+
             x0, y0,  1f, 1f,
             x1, y1,  0f, 0f,
             x0, y1,  1f, 0f
@@ -157,7 +176,7 @@ class Hud(
         texShader.setUniform("uViewport", Vector2f(viewW.toFloat(), viewH.toFloat()))
         texShader.setUniform("uTex", 0)
 
-        iconTex.bind(0)
+        tex.bind(0)
 
         glBindVertexArray(iconVao)
         glBindBuffer(GL_ARRAY_BUFFER, iconVbo)
@@ -166,16 +185,7 @@ class Hud(
         glBindBuffer(GL_ARRAY_BUFFER, 0)
         glBindVertexArray(0)
 
-        iconTex.unbind()
-    }
-
-    /** Positionierung oben rechts mit kleinem Rand. */
-    private fun drawIconTopRight(viewW: Int, viewH: Int) {
-        val pad = 20f * scale
-        val size = 64f * scale
-        val x = viewW - pad - size
-        val y = topMargin
-        drawIcon(x, y, size, size, viewW, viewH)
+        tex.unbind()
     }
 
     private fun drawColon(cx: Float, y: Float, w: Float, h: Float, t: Float, vw: Int, vh: Int) {
@@ -189,6 +199,7 @@ class Hud(
     }
 
     private fun drawDigit(d: Int, x: Float, y: Float, W: Float, H: Float, T: Float, vw: Int, vh: Int) {
+        // A,B,C,D,E,F,G
         val seg = when (d) {
             0 -> booleanArrayOf(true,  true,  true,  true,  true,  true,  false)
             1 -> booleanArrayOf(false, true,  true,  false, false, false, false)
@@ -222,7 +233,6 @@ class Hud(
             x0, y0,  x1, y0,  x1, y1,
             x0, y0,  x1, y1,  x0, y1
         )
-
         glBindVertexArray(vao)
         glBindBuffer(GL_ARRAY_BUFFER, vbo)
         glBufferData(GL_ARRAY_BUFFER, verts, GL_DYNAMIC_DRAW)

@@ -246,7 +246,7 @@ class Scene(private val window: GameWindow) {
         hud.draw(
             vp[2], vp[3],
             secondsLeft = kotlin.math.max(0f, totalTimeToBlack - nowT),
-            showIcon = (levelIndex == 0)
+            showIcon = (levelIndex in 0..2)   // vorher evtl. nur == 0
         )
     }
 
@@ -492,6 +492,14 @@ class Scene(private val window: GameWindow) {
         levelIndex = index
         focusIndex = 0
         controlIndex = 0
+
+        // << NEU: HUD-Icon je Level >>
+        when (index) {
+            0 -> hud.setIcon("assets/picture/bauerfigur.png")
+            1 -> hud.setIcon("assets/picture/teekessel.png")
+            2 -> hud.setIcon("assets/picture/stuhl.png")
+            else -> hud.setIcon(null)
+        }
     }
 
     fun nextLevel() {
