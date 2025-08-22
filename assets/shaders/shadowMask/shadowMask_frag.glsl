@@ -2,13 +2,13 @@
 
 // Vom Vertex-Shader (muss exakt übereinstimmen!)
 in struct VertexData {
-    vec3 fragPos_view;
-    vec3 normal_view;
-    vec3 toLight_view;
-    vec3 toCamera_view;
-    vec3 color;               // <--- hinzugefügt, damit Match da ist
-    vec2 texCoords;
-    vec4 fragPos_lightSpace;  // Position im Licht-Raum
+    vec3 fragPos_view;                      // Fragmentposition im Viewspace
+    vec3 normal_view;                       // Normale im Viewspace
+    vec3 toLight_view;                      // Licht-Vektor (nicht normalisiert)
+    vec3 toCamera_view;                     // Kamera-Vektor (nicht normalisiert)
+    vec3 color;                             // Normale als Farbe speichern
+    vec2 texCoords;                         // Texturkoordinaten für Fragment-Shader
+    vec4 fragPos_lightSpace;                // NEU: Position im Licht-Raum
 } vertexData;
 
 uniform sampler2D shadowMap;

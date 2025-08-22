@@ -15,9 +15,15 @@ import cga.framework.OBJLoader.loadOBJ
 import org.joml.Matrix4f
 import org.joml.Vector2f
 import org.joml.Vector3f
+import org.lwjgl.BufferUtils
 import org.lwjgl.glfw.GLFW.*
 import org.lwjgl.opengl.GL11.*
 import org.lwjgl.opengl.GL30.*
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import java.nio.file.Files
+import java.nio.file.Paths
+import java.util.Base64
 import kotlin.math.abs
 import kotlin.math.sin
 import kotlin.system.exitProcess
@@ -43,6 +49,9 @@ class Scene(private val window: GameWindow) {
 
     // shadow mask dump in byte
 
+    private var requestMaskDump = false
+    private val targetMaskPath = "assets/masks/target_shadow.msk" // dein Zielschatten (RAW)
+
     //--- Debug-Flags ---
     private var showMaskDebug = false
 
@@ -51,7 +60,7 @@ class Scene(private val window: GameWindow) {
     private var quadVbo = 0
     private val screenShader = ShaderProgram(
         "assets/shaders/quad/screen_quad_vert.glsl",
-        "assets/shaders/quad/screen_mask:frag.glsl"
+        "assets/shaders/quad/screen_mask_frag.glsl"
     )
     private val maskTexUnit = 5 // frei wähawdawdawdawdlbar
 
@@ -176,6 +185,7 @@ class Scene(private val window: GameWindow) {
         glGenFramebuffers(fbos)
         shadowMaskFBO = fbos[0]
         glBindFramebuffer(GL_FRAMEBUFFER, shadowMaskFBO)
+        glDrawBuffer(GL_COLOR_ATTACHMENT0)
 
         // Textur für Maske
         val textures = IntArray(1)
@@ -272,6 +282,9 @@ class Scene(private val window: GameWindow) {
         // Shadow-Mask Pass
         glViewport(0, 0, shadowMaskWidth, shadowMaskHeight)
         glBindFramebuffer(GL_FRAMEBUFFER, shadowMaskFBO)
+
+        glEnable(GL_DEPTH_TEST)
+
         glClear(GL_COLOR_BUFFER_BIT or GL_DEPTH_BUFFER_BIT)
 
         shadowMaskShader.use()
@@ -303,13 +316,28 @@ class Scene(private val window: GameWindow) {
 
         glBindFramebuffer(GL_FRAMEBUFFER, 0)
 
+        if (requestMaskDump) {
+            try {
+                val bytes = captureShadowMaskBytes()
+                writeMaskRaw(targetMaskPath, shadowMaskWidth, shadowMaskHeight, bytes)
+                // Optional zusätzlich als Base64 in Konsole:
+                // printMaskAsBase64(bytes, shadowMaskWidth, shadowMaskHeight)
+
+                println("Shadow-Mask gespeichert → $targetMaskPath  (${shadowMaskWidth}x${shadowMaskHeight}, ${bytes.size} Bytes)")
+            } catch (e: Exception) {
+                println("Fehler beim Speichern der Shadow-Mask: ${e.message}")
+            } finally {
+                requestMaskDump = false
+            }
+        }
+
         glViewport(vp[0], vp[1], vp[2], vp[3])
 
 
 
 // --- DEBUG: Shadow-Maske fullscreen ausgeben ---
 
-        if(showMaskDebug == false) {
+        if(showMaskDebug) {
             glBindFramebuffer(GL_FRAMEBUFFER, 0)
             glViewport(vp[0], vp[1], vp[2], vp[3])
             glDisable(GL_DEPTH_TEST)                 // fullscreen quad braucht kein Depth-Test
@@ -367,11 +395,6 @@ class Scene(private val window: GameWindow) {
             ls_BikeSpot?.let { shadow.bindForScenePass(staticShader, it, unit = shadowUnit) }
         }
 
-        // Anchor-Spot ohne Shadowmap
-        bikeSpot?.let { sp ->
-            staticShader.setUniform("spotLight_color", sp.color)
-            sp.bind(staticShader, view)
-        }
 
         // Emission-Tint
         val r = (sin(t * 2.0) * 0.5 + 0.5).toFloat()
@@ -389,6 +412,39 @@ class Scene(private val window: GameWindow) {
         // Fade-Overlay
         val alphaF = if (forceBlackout) 1f else fadeAlpha()
         fadeOverlay.draw(alphaF)
+    }
+
+    private fun captureShadowMaskBytes(): ByteArray {
+        val byteCount = shadowMaskWidth * shadowMaskHeight // R8 → 1 Byte pro Pixel
+        val buf = BufferUtils.createByteBuffer(byteCount)
+        glBindTexture(GL_TEXTURE_2D, shadowMaskTex)
+        glGetTexImage(GL_TEXTURE_2D, 0, GL_RED, GL_UNSIGNED_BYTE, buf)
+        val arr = ByteArray(byteCount)
+        buf.get(arr)
+        return arr
+    }
+
+    private fun writeMaskRaw(path: String, width: Int, height: Int, data: ByteArray) {
+        require(data.size == width * height) { "Masken-Datenlänge passt nicht zu ${width}x${height}" }
+
+        val header = ByteBuffer.allocate(12).order(ByteOrder.LITTLE_ENDIAN)
+        header.put('M'.code.toByte()).put('S'.code.toByte()).put('K'.code.toByte()).put('1'.code.toByte())
+        header.putInt(width)
+        header.putInt(height)
+        header.flip()
+
+        val out = ByteBuffer.allocate(header.remaining() + data.size)
+        out.put(header)
+        out.put(data)
+        out.flip()
+
+        Files.createDirectories(Paths.get(path).parent)
+        Files.write(Paths.get(path), out.array())
+    }
+
+    private fun printMaskAsBase64(data: ByteArray, width: Int, height: Int) {
+        val b64 = Base64.getEncoder().encodeToString(data)
+        println("MASK_BASE64_R8_${width}x${height}=$b64")
     }
 
     // --- Update ---
@@ -473,6 +529,10 @@ class Scene(private val window: GameWindow) {
             println("Shadow-Mask-Debug: ${if (showMaskDebug) "AN" else "AUS"}")
         }
 
+        if (key == GLFW_KEY_COMMA) {
+            requestMaskDump = true
+            println("Shadow-Mask: Dump angefordert (wird nach dem Mask-Pass dieser Frame gespeichert).")
+        }
     }
 
     fun onMouseMove(xpos: Double, ypos: Double) {

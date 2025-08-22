@@ -21,7 +21,6 @@ in struct VertexData {
     vec3 normal_view;
     vec3 toLight_view;
     vec3 toCamera_view;
-
     vec3 color;
     vec2 texCoords;
 

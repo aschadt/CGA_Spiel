@@ -19,10 +19,8 @@ out struct VertexData {
     vec3 normal_view;                       // Normale im Viewspace
     vec3 toLight_view;                      // Licht-Vektor (nicht normalisiert)
     vec3 toCamera_view;                     // Kamera-Vektor (nicht normalisiert)
-
     vec3 color;                             // Normale als Farbe speichern
     vec2 texCoords;                         // Texturkoordinaten für Fragment-Shader
-
     vec4 fragPos_lightSpace;                // NEU: Position im Licht-Raum
 } vertexData;
 
