@@ -19,7 +19,7 @@ Türker Ermemis
 
 # Verschiedene Kameramodelle (Wechsel zwischen orthographischer und perspektivischer Kamera mittels "p", weitere Kameras Orbit/flythrough "F1-F4", Zoom mit "O,U", Höhenverstellung durch "M,N") (Türker)
 
-Verschiedene Shaderprogramme 
+Verschiedene Shaderprogramme
 UI,Timer,Overfade (Türker)
 ===
 
@@ -35,11 +35,11 @@ Objektsteuerung (Artem)
 Beleuchtung (Alle)
 ===
 
-&nbsp;
+ 
 
 ===
 
-# 
+# Sciebo Link zum Video: https://th-koeln.sciebo.de/s/8m6ik39vMX5d4VE
 
 # 
 
