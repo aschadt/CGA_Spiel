@@ -187,7 +187,7 @@ class Scene(private val window: GameWindow) {
         glBindFramebuffer(GL_FRAMEBUFFER, shadowMaskFBO)
         glDrawBuffer(GL_COLOR_ATTACHMENT0)
 
-        // Textur für Maske
+        // Textur für ShadowMaske
         val textures = IntArray(1)
         glGenTextures(textures)
         shadowMaskTex = textures[0]

@@ -1,4 +1,7 @@
 #version 330 core
+
+//#define USE_PCF  // auskommentiert = PCF AUS (binär)
+
 // Spotlight
 uniform vec3  spot_direction_view;
 uniform float spot_innerCutoff;
@@ -46,33 +49,37 @@ uniform float     material_shininess;
 // ShadowMap
 uniform sampler2D shadowMap;
 
-// Shadow-Berechnung mit Bias + 3x3 PCF
+// Shadow-Berechnung mit Bias + optiobal 3x3 PCF
 float ShadowCalculation(vec4 fragPosLightSpace, vec3 normal_view, vec3 lightDir_view)
 {
-    // Projektionsraum -> NDC -> [0,1]
     vec3 projCoords = fragPosLightSpace.xyz / max(fragPosLightSpace.w, 1e-6);
     projCoords = projCoords * 0.5 + 0.5;
 
-    // Außerhalb des Lichtfrustums: kein Schatten
-    if (projCoords.z > 1.0) return 0.0;
+    if (projCoords.z > 1.0 || projCoords.x < 0.0 || projCoords.x > 1.0
+    || projCoords.y < 0.0 || projCoords.y > 1.0)
+    return 0.0;
 
     float currentDepth = projCoords.z;
 
-    // Winkelabhängiger Bias gegen Shadow Acne
-    float bias = max(0.05 * (1.0 - max(dot(normalize(normal_view), normalize(lightDir_view)), 0.0)), 0.005);
+    float ndotl = max(dot(normalize(normal_view), normalize(lightDir_view)), 0.0);
+    float bias = max(0.05 * (1.0 - ndotl), 0.002);
 
-    // PCF 3x3
+    #ifndef USE_PCF
+    // ---- BINÄR, KEIN PCF ----
+    float mapDepth = texture(shadowMap, projCoords.xy).r;
+    return (currentDepth - bias > mapDepth) ? 1.0 : 0.0;
+    #else
+    // ---- PCF 3x3 (weich) ----
     float shadow = 0.0;
     vec2 texelSize = 1.0 / textureSize(shadowMap, 0);
     for (int x = -1; x <= 1; ++x) {
         for (int y = -1; y <= 1; ++y) {
-            float pcfDepth = texture(shadowMap, projCoords.xy + vec2(x, y) * texelSize).r;
-            shadow += (currentDepth - bias > pcfDepth) ? 1.0 : 0.0;
+            float mapDepth = texture(shadowMap, projCoords.xy + vec2(x, y) * texelSize).r;
+            shadow += (currentDepth - bias > mapDepth) ? 1.0 : 0.0;
         }
     }
-    shadow /= 9.0;
-
-    return shadow;
+    return shadow / 9.0;
+    #endif
 }
 
 void main()
