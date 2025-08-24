@@ -27,6 +27,7 @@ import java.util.Base64
 import kotlin.math.abs
 import kotlin.math.sin
 import kotlin.system.exitProcess
+import kotlin.random.*
 
 class Scene(private val window: GameWindow) {
 
@@ -50,7 +51,6 @@ class Scene(private val window: GameWindow) {
     // shadow mask dump in byte
 
     private var requestMaskDump = false
-    private val targetMaskPath = "assets/masks/target_shadow.msk" // dein Zielschatten (RAW)
 
     //--- Debug-Flags ---
     private var showMaskDebug = false
@@ -62,7 +62,7 @@ class Scene(private val window: GameWindow) {
         "assets/shaders/quad/screen_quad_vert.glsl",
         "assets/shaders/quad/screen_mask_frag.glsl"
     )
-    private val maskTexUnit = 5 // frei wähawdawdawdawdlbar
+    private val maskTexUnit = 5 // frei wählbar
 
 
     // --- Level ---
@@ -319,6 +319,7 @@ class Scene(private val window: GameWindow) {
         if (requestMaskDump) {
             try {
                 val bytes = captureShadowMaskBytes()
+                val targetMaskPath = generateMaskFilePath()
                 writeMaskRaw(targetMaskPath, shadowMaskWidth, shadowMaskHeight, bytes)
                 // Optional zusätzlich als Base64 in Konsole:
                 // printMaskAsBase64(bytes, shadowMaskWidth, shadowMaskHeight)
@@ -414,10 +415,17 @@ class Scene(private val window: GameWindow) {
         fadeOverlay.draw(alphaF)
     }
 
+    fun generateMaskFilePath(): String {
+        val rnd: Int = Random.nextInt(100000, 999999)
+        return "assets/masks/target_shadow_$rnd.msk"
+    }
+
+// Shadowmask
     private fun captureShadowMaskBytes(): ByteArray {
         val byteCount = shadowMaskWidth * shadowMaskHeight // R8 → 1 Byte pro Pixel
         val buf = BufferUtils.createByteBuffer(byteCount)
         glBindTexture(GL_TEXTURE_2D, shadowMaskTex)
+        glPixelStorei(GL_PACK_ALIGNMENT, 1) //(Speicher: 1 Byte pro Pixel
         glGetTexImage(GL_TEXTURE_2D, 0, GL_RED, GL_UNSIGNED_BYTE, buf)
         val arr = ByteArray(byteCount)
         buf.get(arr)
@@ -446,6 +454,8 @@ class Scene(private val window: GameWindow) {
         val b64 = Base64.getEncoder().encodeToString(data)
         println("MASK_BASE64_R8_${width}x${height}=$b64")
     }
+
+
 
     // --- Update ---
     fun update(dt: Float, t: Float) {

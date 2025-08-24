@@ -31,7 +31,7 @@ float ShadowCalculation(vec4 fragPosLightSpace, vec3 normal_view, vec3 lightDir_
 
     // gleicher, winkelabhängiger Bias wie im Scene-Shader
     float ndotl = max(dot(normalize(normal_view), normalize(lightDir_view)), 0.0);
-    float bias = max(0.05 * (1.0 - ndotl), 0.002);
+    float bias = max(0.05 * (1.0 - ndotl), 0.005);
 
     #ifndef USE_PCF
     // Binär (kein PCF)
@@ -56,7 +56,7 @@ out vec4 fragColor;
 void main()
 {
     // exakt die gleichen Eingaben wie im Scene-Shader
-    vec3 N = vertexData.normal_view;
+    vec3 N = normalize(vertexData.normal_view);
     vec3 L = normalize(vertexData.toLight_view);
 
     float shadow = ShadowCalculation(vertexData.fragPos_lightSpace, N, L);

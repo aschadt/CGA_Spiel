@@ -18,8 +18,8 @@ class ShadowRenderer(
 
     // Minimaler Depth-Shader (assets/shaders/depth_vert.glsl, depth_frag.glsl)
     private val depthShader = ShaderProgram(
-        "assets/shaders/Shadow Mapping/depth/depth_vert.glsl",
-        "assets/shaders/Shadow Mapping/depth/depth_frag.glsl"
+        "assets/shaders/ShadowMapping/depth/depth_vert.glsl",
+        "assets/shaders/ShadowMapping/depth/depth_frag.glsl"
     )
 
     fun depthShader(): ShaderProgram = depthShader
