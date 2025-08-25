@@ -125,6 +125,7 @@ object LevelLoader {
         return Level(ground = groundRenderable,
             room = roomRenderable,
             objects = listOf(obj1Renderable, obj2Renderable, obj3Renderable),
+            targetMaskPath = "assets/masks/target_shadow_838913.msk"
             )
     }
 

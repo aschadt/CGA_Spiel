@@ -64,6 +64,10 @@ class Scene(private val window: GameWindow) {
     )
     private val maskTexUnit = 5 // frei wählbar
 
+    // --- Zielmaske (Target) ---
+    private var targetMask: ByteArray? = null
+    private var targetW = 0
+    private var targetH = 0
 
     // --- Level ---
     private var currentLevel: Level? = null
@@ -308,10 +312,7 @@ class Scene(private val window: GameWindow) {
         ls_BikeSpot?.let { shadow.bindForScenePass(shadowMaskShader, it, unit = shadowUnit) }
 
         // Szene für Maske rendern (kein Emission, nur Geometrie + Shadow-Berechnung)
-        level.ground.render(shadowMaskShader)
-        level.room.render(shadowMaskShader)
         level.objects.forEach { it.render(shadowMaskShader) }
-        motorrad?.render(shadowMaskShader)
         leinwandRenderable?.render(shadowMaskShader)
 
         glBindFramebuffer(GL_FRAMEBUFFER, 0)
@@ -449,6 +450,39 @@ class Scene(private val window: GameWindow) {
         Files.createDirectories(Paths.get(path).parent)
         Files.write(Paths.get(path), out.array())
     }
+
+    private fun loadMaskRaw(path: String): Boolean {
+        return try {
+            val data = Files.readAllBytes(Paths.get(path))
+            require(data.size >= 12) { "Datei zu klein: $path" }
+
+            val bb = ByteBuffer.wrap(data).order(ByteOrder.LITTLE_ENDIAN)
+
+            val h0 = bb.get().toInt().toChar()
+            val h1 = bb.get().toInt().toChar()
+            val h2 = bb.get().toInt().toChar()
+            val h3 = bb.get().toInt().toChar()
+            require(h0=='M' && h1=='S' && h2=='K' && h3=='1') { "Ungültiger Header: $h0$h1$h2$h3" }
+
+            val w = bb.int
+            val h = bb.int
+            require(bb.remaining() == w*h) { "Payload-Größe passt nicht zu ${w}x$h" }
+
+            val payload = ByteArray(w*h)
+            bb.get(payload)
+
+            targetMask = payload
+            targetW = w
+            targetH = h
+
+            println("Zielmaske geladen: $path  (${w}x$h, ${payload.size} Bytes)")
+            true
+        } catch (e: Exception) {
+            println("Fehler beim Laden der Zielmaske '$path': ${e.message}")
+            false
+        }
+    }
+
 
     private fun printMaskAsBase64(data: ByteArray, width: Int, height: Int) {
         val b64 = Base64.getEncoder().encodeToString(data)
@@ -693,13 +727,20 @@ class Scene(private val window: GameWindow) {
 
     fun loadLevel(index: Int) {
         currentLevel = when (index) {
-            0 -> LevelLoader.loadLevel1()
-            1 -> LevelLoader.loadLevel2()
+            0 -> LevelLoader.loadLevel1();
+            1 -> LevelLoader.loadLevel2();
             else -> null
         }
         levelIndex = index
         focusIndex = 0
         controlIndex = 0
+
+        // --- Zielmaske laden ---
+        if (index == 0) {
+            val maskPath = "assets/masks/target_shadow_838913.msk"
+            loadMaskRaw(maskPath)
+        }
+
     }
 
     fun nextLevel() {
