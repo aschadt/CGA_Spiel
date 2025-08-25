@@ -6,6 +6,8 @@ import cga.exercise.components.geometry.Renderable
 import cga.exercise.components.geometry.VertexAttribute
 import cga.exercise.components.texture.Texture2D
 import cga.framework.OBJLoader.loadOBJ
+import LoadedMask
+import loadMaskRaw
 import org.joml.Vector2f
 import org.joml.Vector3f
 import org.lwjgl.opengl.GL11.GL_FLOAT
@@ -122,11 +124,12 @@ object LevelLoader {
             scale(Vector3f(0.3f, 0.3f, 0.3f))
         }
 
-        return Level(ground = groundRenderable,
+        return Level(
+            ground = groundRenderable,
             room = roomRenderable,
             objects = listOf(obj1Renderable, obj2Renderable, obj3Renderable),
             targetMaskPath = "assets/masks/target_shadow_838913.msk"
-            )
+        )
     }
 
     fun loadLevel2(): Level {
@@ -243,9 +246,11 @@ object LevelLoader {
             scale(Vector3f(0.5f, 0.5f, 0.5f))
         }
 
-        return Level(ground = groundRenderable,
+        return Level(
+            ground = groundRenderable,
             room = roomRenderable,
             objects = listOf(obj1Renderable, obj2Renderable, obj3Renderable),
-        )
+            targetMaskPath = null
+            )
     }
 }

@@ -1,5 +1,6 @@
 package cga.exercise.game
 
+import LoadedMask
 import cga.exercise.components.geometry.*
 import cga.exercise.components.light.PointLight
 import cga.exercise.components.light.SpotLight
@@ -65,7 +66,7 @@ class Scene(private val window: GameWindow) {
     private val maskTexUnit = 5 // frei wählbar
 
     // --- Zielmaske (Target) ---
-    private var targetMask: ByteArray? = null
+    private var targetMask: LoadedMask? = null
     private var targetW = 0
     private var targetH = 0
 
@@ -736,9 +737,19 @@ class Scene(private val window: GameWindow) {
         controlIndex = 0
 
         // --- Zielmaske laden ---
-        if (index == 0) {
-            val maskPath = "assets/masks/target_shadow_838913.msk"
-            loadMaskRaw(maskPath)
+        targetMask = null
+
+        currentLevel?.targetMaskPath?.let { path ->
+            try {
+                val lm = loadMaskRaw(path)  // <- Deine LoadedMask.kt-Funktion
+                if (lm.width != shadowMaskWidth || lm.height != shadowMaskHeight) {
+                    println("WARN: Zielmaske hat ${lm.width}x${lm.height}, erwartet ${shadowMaskWidth}x${shadowMaskHeight}.")
+                }
+                targetMask = lm
+                println("Zielmaske geladen: $path (${lm.width}x${lm.height})")
+            } catch (e: Exception) {
+                println("Fehler beim Laden der Zielmaske ($path): ${e.message}")
+            }
         }
 
     }

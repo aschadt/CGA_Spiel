@@ -6,8 +6,8 @@ import java.nio.file.Paths
 data class LoadedMask(val width: Int, val height: Int, val data: ByteArray)
 
 /** Lädt unsere RAW-Maskendatei ("MSK1" + width + height + bytes). */
-fun loadMaskRaw(path: String): LoadedMask {
-    val bytes = Files.readAllBytes(Paths.get(path))
+fun loadMaskRaw(path: String?): LoadedMask {
+    val bytes = Files.readAllBytes(Paths.get(path?:"Fehler: path = null"))
     require(bytes.size >= 12) { "Datei zu klein" }
 
     val buf = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
