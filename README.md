@@ -45,8 +45,9 @@ Beleuchtung (Alle)
 
 # Quellenverzeichnis
 
-https://learnopengl.com/
-Vorlesungsfolien
-https://polyhaven.com/
+# https://learnopengl.com/
+# Vorlesungsfolien
+# https://polyhaven.com/
 ===
+
 
